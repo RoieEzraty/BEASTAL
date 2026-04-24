@@ -1,0 +1,36 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from User_Variables import User_Variables
+    from Network_State import Network_State
+    from Network_Structure import Network_Structure
+    from Color_Scheme import Color_Scheme
+
+# ===================================================
+# Class - Big class that contains all smaller classes
+# ===================================================
+
+
+class Big_Class:
+    """
+    Big_Class contains the main classes under Network Simulation
+    """
+
+    def __init__(self, Variabs: "User_Variables"):
+        self.Variabs = Variabs
+
+    def add_Strctr(self, Strctr: "Network_Structure"):
+        self.Strctr = Strctr
+
+    def add_Strctr_fict(self, Strctr_fict: "Network_Structure"):
+        self.Strctr_fict = Strctr_fict
+
+    def add_State(self, State: "Network_State"):
+        self.State = State
+
+    def add_NET(self, NET):
+        self.NET = NET
+
+    def add_Colors(self, Colorscheme: "Color_Scheme"):
+        self.Colorscheme = Colorscheme

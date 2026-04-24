@@ -1,0 +1,85 @@
+from __future__ import annotations
+import numpy as np
+
+from numpy.linalg import inv as inv
+from numpy.typing import NDArray
+from typing import Tuple, List, Optional, Union
+from typing import TYPE_CHECKING
+
+import matrix_functions
+
+if TYPE_CHECKING:
+    from Network_Structure import Network_Structure
+
+
+# ==================================
+# functions that solve flow
+# ==================================
+
+
+# @lru_cache(maxsize=20)
+def solve_flow(Strctr: "Network_Structure",
+               CstrTuple: Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]],
+               K_vec: NDArray[np.float_]) -> Tuple[NDArray[np.float_], NDArray[np.float_]]:
+    """
+    Solves for the pressure at nodes and flow at edges, given Lagrangian etc.
+    flow at edge defined as difference in pressure between input and output nodes time conductivity at each edge.
+    2nd part of State.solve_flow_given_modality, Comes after functions.setup_constraints_given_pin.
+
+    input:
+    Strctr: "Network_Structure" class instance with the input, intermediate and output nodes
+    CstrTuple - Tuple consisting - Cstr_full - 2D array without last column, which is f from Rocks & Katifori 2018
+                                               https://www.pnas.org/cgi/doi/10.1073/pnas.1806790116
+                                   Cstr -      Cstr_full without last line
+                                   f    -      constraint vector (from Rocks and Katifori 2018)1D np.arrays sized NEdges
+                                               such that EI[i] is node connected to EJ[i] at certain edge
+    K_vec  - [NE] 2D cubic np.array of conductances (inverse of reistances)
+    round  - float, value below which the absolute value of u and p are rounded to 0.
+
+    output:
+    p - hydrostatic pressure, 1D np.array sized NNodes
+    u - velocity through each edge 1D np.array sized len(EI)
+    """
+    Cstr: NDArray[np.float_] = CstrTuple[1]
+    f: NDArray[np.float_] = CstrTuple[2]
+
+    # Calculate Inverse Lagrangian
+    L: NDArray[np.float_]  # type hint them
+    L_bar: NDArray[np.float_]  # type hint them
+    K_mat: NDArray[np.float_] = np.diag(K_vec)
+    L, L_bar = matrix_functions.buildL(Strctr.DM, K_mat, Cstr, Strctr.NN)  # Lagrangian
+
+    IL_bar: NDArray[np.float_] = inv(L_bar)
+
+    # pressure p and velocity u
+    p: NDArray[np.float_] = np.dot(IL_bar, f)
+    u: NDArray[np.float_] = ((p[Strctr.EI] - p[Strctr.EJ]).T*K_vec)[0]
+    p, u = round_small(p, u)
+    return p, u
+
+
+def round_small(p: NDArray[np.float_], u: NDArray[np.float_], roundto: float = 10**-10) -> Tuple[NDArray[np.float_],
+                                                                                                 NDArray[np.float_]]:
+    """
+    round_small rounds values of u and p that are close to 0 to get rid of rounding problems
+    """
+    p[abs(p) < roundto] = 0  # Correct for very low pressures
+    u[abs(u) < roundto] = 0  # Correct for very low velocities
+    return p, u
+
+
+def dot_triple(X: Union[NDArray[np.float_], NDArray[np.int_]],
+               Y: Union[NDArray[np.float_], NDArray[np.int_]],
+               Z: Union[NDArray[np.float_], NDArray[np.int_]]) -> NDArray[np.float_]:
+    """
+    Matrix triple product X @ Y @ Z.
+
+    Parameters
+    ----------
+    X, Y, Z : np.ndarray
+
+    Returns
+    -------
+    np.ndarray
+    """
+    return np.dot(X, np.dot(Y, Z))
