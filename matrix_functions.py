@@ -206,7 +206,7 @@ def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDAr
         for i, inNode in enumerate(Strctr.extraInput_nodes_arr):
             EIlst.append(inNode)
             EJlst.append(ground_node)
-    
+
         # connect output to ground
         for i, outNode in enumerate(Strctr.output_nodes_arr):
             EIlst.append(outNode)
@@ -465,6 +465,56 @@ def K_from_R(R_vec: NDArray[np.float_]) -> NDArray[np.float_]:
     # Replace -inf with a large negative value (or directly clip it)
     K_vec = np.nan_to_num(K_vec, nan=0.0, posinf=1e+06, neginf=-1e+06)
     return K_vec
+
+
+def edge_flow_from_pressure_drop(delta_p: NDArray[np.float_], K_vec: NDArray[np.float_], law: str = 'linear',
+                                 exponent: float = 1.0) -> NDArray[np.float_]:
+    """
+    Evaluate the edge constitutive law u(delta_p).
+
+    Parameters
+    ----------
+    delta_p : NDArray[np.float_]
+        Edge pressure/voltage drops.
+    K_vec : NDArray[np.float_]
+        Linear conductances for ``law='linear'`` and prefactors for nonlinear laws.
+    law : str, optional
+        Constitutive law. Supported values:
+        - ``'linear'``: ``u = K * delta_p``
+        - ``'power_law'``: ``u = K * sign(delta_p) * |delta_p|**exponent``
+    exponent : float, optional
+        Power-law exponent. ``exponent=1`` reduces to the linear case.
+
+    Returns
+    -------
+    NDArray[np.float_]
+        Edge flows/currents.
+    """
+    if law == 'linear':
+        return K_vec * delta_p
+    if law == 'power_law':
+        return K_vec * np.sign(delta_p) * np.abs(delta_p)**exponent
+    raise ValueError(f"Unknown nonlinear law '{law}'")
+
+
+def effective_conductance_from_pressure_drop(delta_p: NDArray[np.float_], K_vec: NDArray[np.float_],
+                                             law: str = 'linear', exponent: float = 1.0,
+                                             regularization: float = 1e-12,
+                                             max_conductance: float = 1e12) -> NDArray[np.float_]:
+    """
+    Build a secant conductance ``K_eff = u(delta_p) / delta_p`` for iteratively reweighted solves.
+
+    For the power-law case this yields ``K_eff = K * |delta_p|**(exponent - 1)`` with a small
+    regularization near zero pressure drop.
+    """
+    safe_delta_p = np.where(np.abs(delta_p) < regularization,
+                            np.sign(delta_p) * regularization + (delta_p == 0) * regularization,
+                            delta_p)
+    u_vec = edge_flow_from_pressure_drop(safe_delta_p, K_vec, law=law, exponent=exponent)
+    K_eff = u_vec / safe_delta_p
+    K_eff = np.nan_to_num(K_eff, nan=0.0, posinf=max_conductance, neginf=-max_conductance)
+    K_eff = np.clip(K_eff, -max_conductance, max_conductance)
+    return K_eff
 
 
 def grad_loss_FC(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_nodes_arr: NDArray[np.int_],
