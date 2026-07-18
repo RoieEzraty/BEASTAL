@@ -60,6 +60,7 @@ class User_Variables:
         else:
             self.loss_fn = functions.loss_fn_1sample
         self.R_update: str = str(R_update)
+        self.alpha_scale_nonlin: float = CFG.Sprvsr.alpha_scale_nonlin
         self.training_scheme: str = str(training_scheme)
         self.supress_prints: bool = bool(supress_prints)
         self.task_type: str = str(task_type)
@@ -199,6 +200,9 @@ class User_Variables:
         alpha: float of the learning rate alpha
         """
         if isinstance(alpha, float):
-            self.alpha_vec: NDArray[np.float_] = np.tile(alpha, (self.Nout,))
+            if self.R_update in ['deltaR_propto_dp_nonlin', 'deltaR_propto_dp_nonlin_decay']:
+                self.alpha_vec: NDArray[np.float_] = np.tile(alpha * self.alpha_scale_nonlin, (self.Nout,))
+            else:
+                self.alpha_vec: NDArray[np.float_] = np.tile(alpha, (self.Nout,))
         else:
             print('wrong type for alpha, should be float')

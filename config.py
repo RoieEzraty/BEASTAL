@@ -15,8 +15,8 @@ class StructureConfig:
     net_type: str = "FC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 2
-    Nout: int = 2
+    Nin: int = 9
+    Nout: int = 1
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -29,6 +29,7 @@ class VariablesConfig:
     """Physical update-rule parameters."""
 
     R_update: str = "deltaR_propto_dp"
+    # R_update: str = "deltaR_propto_dp_nonlin"
     gamma: NDArray[np.float_] = field(default_factory=lambda: np.array([1.0]))
     R_max: float = 2.0
     R_min: float = 0.02
@@ -52,15 +53,16 @@ class SupervisorConfig:
     task_type: str = "Regression"
     dataset_type: str = "uniform_random"
     training_scheme: str = "Adaline"
-    iterations: int = 1800
-    alpha: float = 0.17
+    iterations: int = 2000
+    alpha: float = 0.028
+    alpha_nonlin: float = alpha * 10
     use_p_tag: bool = False
     stay_sample: int = 1
     normalize_loss: bool = True
     supress_prints: bool = True
     measure_accuracy_every: int = 15
     anneal: bool = True
-    T_annealing: float = 2.0
+    T_annealing: float = 1.0
     include_Power: bool = False
     access_interNodes: bool = False
     noise_to_extra: bool = False
@@ -71,9 +73,9 @@ class SupervisorConfig:
     M_values: NDArray[np.float_] = field(
         default_factory=lambda: np.array([2 / 4, 1 / 4, 0.1, 0.35, 0.75, 0.04])
     )
-    normalize_M: bool = False
+    normalize_M: bool = True
     normalize: float = 0.75
-    random_state_M: int = 42
+    random_state_M: int = 35
     random_state: int = 52
 
 
