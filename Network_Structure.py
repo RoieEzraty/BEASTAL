@@ -5,6 +5,7 @@ from typing import Tuple
 from numpy.typing import NDArray
 
 import matrix_functions
+from config import CFG
 
 
 # ===================================================
@@ -19,7 +20,8 @@ class Network_Structure:
 
     def __init__(self, inOutInterGround_tuple: Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
                                                      NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],],
-                 net_type: str = 'FC', height: int = 0, length: int = 0) -> None:
+                 net_type: str = CFG.Strctr.net_type, height: int = CFG.Strctr.net_height,
+                 length: int = CFG.Strctr.net_length) -> None:
         """
         net_types:
         FC                   - each input connected to each output
@@ -35,9 +37,9 @@ class Network_Structure:
         self.ground_nodes_arr: NDArray[np.int_] = inOutInterGround_tuple[5]
 
         # for square network
-        self.net_type = net_type
-        self.net_height = height
-        self.net_len = length
+        self.net_type = str(net_type)
+        self.net_height = int(height)
+        self.net_len = int(length)
 
     def build_incidence(self, type: str = 'FC') -> None:
         """

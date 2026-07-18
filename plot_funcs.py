@@ -16,10 +16,9 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.lines import Line2D
 from matplotlib.colors import LogNorm
 
-import statistics
+import statistics, colors
 
-if TYPE_CHECKING:
-    from Color_Scheme import Color_Scheme
+colors_lst, red, custom_cmap = colors.color_scheme()
 
 
 # ================================
@@ -37,6 +36,202 @@ plt.rcParams['legend.loc'] = 'best'
 
 # # The functions
 
+def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_network: Optional[bool] = False,
+                    node_labels: bool = False) -> None:
+    """
+    one plot with 4 subfigures of
+    1) mean absolute value of loss in time
+    2) inputs and outputs in the update modality, in time
+    3) resistances in time
+    4) Network structure, from networkx pos_lattice
+
+    inputs:
+    BigClass        - Class instance containing User_Variables, Network_Structure, etc.
+    movmean_loss    - boolean of whether to smoothen loss with moving mean
+    include_network - boolean of whether to plot network
+    node_label      - boolean of whether to plot node number
+
+    outputs:
+    1 matplotlib plot
+    """
+
+    Nin = BigClass.Variabs.Nin
+    Nout = BigClass.Variabs.Nout
+    t = BigClass.State.t
+
+    # Set the custom color cycle globally without cycler
+    colors_lst, red, custom_cmap = colors.color_scheme()
+    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', colors_lst)
+
+    legend2 = []
+    if Nout == 1:
+        legend2.append(r'$y\,\mathrm{update}$')
+    else:
+        legend2 += [rf'$y_{{{j+1}}}\,\mathrm{{update}}$' for j in range(Nout)]
+
+    # Input updates: x, x_1, x_2, ...
+    if Nin == 1:
+        legend2.append(r'$x\,\mathrm{update}$')
+    else:
+        legend2 += [rf'$x_{{{i+1}}}\,\mathrm{{update}}$' for i in range(Nin)]
+
+    if include_network:
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(17, 3))
+    else:
+        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12.75, 3))
+
+    # Loss
+    for t in range(t):
+        if t % len(BigClass.Variabs.dataset) == 0 and t != 0 and BigClass.Variabs.task_type != 'Regression':
+            ax1.axvline(x=t, color='red', linestyle='--', linewidth=1)
+    if movmean_loss:
+        movmean_loss_t = statistics.mov_ave(BigClass.State.loss_scalar_in_t, 16)
+        ax1.plot(np.abs(movmean_loss_t[1:]))
+    else:
+        ax1.plot(BigClass.State.loss_scalar_in_t[1:])
+    # ax1.plot(np.mean(np.mean(np.abs(BigClass.State.loss_in_t[1:]), axis=1), axis=1))
+    ax1.set_yscale('log')
+    ax1.set_ylim(1e-5, 1)
+    ax1.set_title(r'$\|\mathcal{L}\|$')
+    ax1.set_xlabel('t')
+
+    # Update modality
+    ax2.plot(BigClass.State.output_update_in_t[1:])
+    ax2.plot(BigClass.State.input_update_in_t[1:])
+    if BigClass.Variabs.access_interNodes:
+        ax2.plot(BigClass.State.inter_update_in_t[1:])
+    ax2.set_title('"Update" modality pressure')
+    ax2.set_xlabel('t')
+    if legend2 and len(legend2) < 6:
+        ax2.legend(legend2)
+
+    # Resistances
+    ax3.plot(BigClass.State.R_in_t[1:])
+    ax3.set_title(r'$R$')
+    ax3.set_xlabel('t')
+
+    # Network structure
+    if include_network:
+        if BigClass.NET.NET is not None:
+            plotNetStructure(NET=BigClass.NET.NET,
+                             BigClass=BigClass,
+                             pos_lattice=BigClass.NET.pos_lattice,
+                             node_labels=node_labels,
+                             R_reordered=BigClass.NET.R_reordered,
+                             u_reordered=BigClass.NET.u_reordered,
+                             p_reordered=BigClass.NET.p_reordered,
+                             ax=ax4  # Pass the subplot axis
+                             )
+        else:
+            print('no NET assigned in input')
+    plt.show()
+
+
+def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
+                     pos_lattice: Dict[Any, Tuple[float, float]], node_labels: bool = False,
+                     R_reordered: NDArray[np.float_] = np.array([]),
+                     u_reordered: NDArray[np.float_] = np.array([]),
+                     p_reordered: NDArray[np.float_] = np.array([]), ax: Optional[plt.Axes] = None) -> None:
+    """
+    Plots the structure (nodes and edges) of networkx NET
+    Arrows represent flow direction, arrow width = flow magnitude, color = R (low-cyan, high-purple)
+
+    input:
+    NET         - networkx net of nodes and edges
+    BigClass    - Class instance containing User_Variables, Network_Structure, etc.
+    pos_lattice - dict of positions of nodes from NET.nodes
+    node_labels - boolean, show node number in plot or not
+    R_reordered - array of values used to determine edge colors
+    u_reordered - array of values used to determine edge widths and flow direction
+    p_reordered - array of values used to determine node colors
+
+    output:
+    matplotlib plot of network structure
+    """
+    colors_lst, red, cmap = colors.color_scheme()
+    # Determine edge colors from resistances
+    if R_reordered.size > 0:
+        R_reordered_normalized = 4 * R_reordered / np.max(R_reordered)  # resistances
+        edge_colors = [BigClass.cmap(value) for value in R_reordered_normalized]
+    else:
+        edge_colors = [colors_lst[0] for _ in range(len(NET.edges))]
+
+    # Determine edge widths and directions from flow u
+    if u_reordered.size > 0:
+        edge_widths = 3 * np.abs(u_reordered)/np.max(np.abs(u_reordered))  # Widths based on absolute flow
+        edge_directions = [1 if flow > 0 else -1 for flow in u_reordered]  # Positive or negative flow
+    else:
+        edge_widths = [1.0 for _ in range(len(NET.edges))]
+        edge_directions = [1 for _ in range(len(NET.edges))]  # Default all positive
+
+    # Determine node colors from pressure p
+    if p_reordered.size > 0:
+        p_reordered_normalized = p_reordered / np.max(p_reordered)
+        node_colors = [cmap(value) for value in p_reordered_normalized]
+    else:
+        # node_colors = [colors_lst[0] for _ in range(len(NET.nodes))]
+        node_colors = []
+        for node in NET.nodes:
+            if node in BigClass.Strctr.input_nodes_arr:
+                node_colors.append(colors_lst[0])
+            elif node in BigClass.Strctr.output_nodes_arr:
+                node_colors.append(colors_lst[1])
+            elif node == BigClass.Strctr.NN-1:
+                node_colors.append("black")
+            else:
+                node_colors.append("gray")  # Optional: default color for unclassified nodes
+
+    # Create or use the specified axis
+    ax = ax or plt.gca()
+
+    # # Draw edges with arrows
+    # for (u, v), color, width, direction in zip(NET.edges, edge_colors, edge_widths, edge_directions):
+    #     if direction > 0:  # Positive flow
+    #         nx.draw_networkx_edges(NET, pos_lattice, edgelist=[(u, v)], edge_color=[color], width=width,
+    #                                connectionstyle="arc3,rad=0.0", arrowstyle="-|>", arrows=True, ax=ax)
+    #     else:  # Negative flow (reverse direction)
+    #         nx.draw_networkx_edges(NET, pos_lattice, edgelist=[(u, v)], edge_color=[color], width=width,
+    #                                connectionstyle="arc3,rad=0.0", arrowstyle="<|-", arrows=True, ax=ax)
+
+    # # Draw nodes
+    # # nx.draw_networkx_nodes(NET, pos=pos_lattice, node_color=node_colors, node_size=100)
+    # nx.draw_networkx_nodes(NET, pos=pos_lattice, node_color=node_colors, node_size=20)
+
+    # # Highlight input nodes
+    # nx.draw_networkx_nodes(NET,
+    #                        pos=pos_lattice,
+    #                        nodelist=BigClass.Strctr.input_nodes_arr,
+    #                        node_color="none",  # Hollow circle
+    #                        edgecolors="k",  # black border
+    #                        node_size=200,  # Adjust size as needed
+    #                        linewidths=2)  # Thickness of the border
+
+    # # Highlight output nodes
+    # nx.draw_networkx_nodes(NET,
+    #                        pos=pos_lattice,
+    #                        nodelist=BigClass.Strctr.output_nodes_arr,
+    #                        node_color="none",  # Hollow circle
+    #                        edgecolors="grey",  # Grey border
+    #                        node_size=200,  # Adjust size as needed
+    #                        linewidths=2)  # Thickness of the border
+
+    # Draw arrows for ax5
+    # draw_arrow(ax5, pos_lattice_both, 0, 2, color=colors_lst[0], head_width=arrow_head_w)  # in to output
+    # draw_arrow(ax5, pos_lattice_both, 1, 2, color=colors_lst[0], head_width=arrow_head_w)  # in to output
+    # draw_arrow(ax5, pos_lattice_both, 2, 3, color=colors_lst[0], head_width=arrow_head_w)  # out to ground
+    nx.draw_networkx(NET, pos=pos_lattice, edge_color=edge_colors,
+                     node_color=node_colors, with_labels=False, arrows=True, font_color='white',
+                     font_size=14, width=2, node_size=400)
+
+    # Draw labels (if enabled)
+    if node_labels:
+        nx.draw_networkx_labels(NET, pos=pos_lattice, font_size=16, font_color='white')
+
+    # Show the plot
+    plt.show()
+    print('NET is ready')
+
+
 
 def plot_performance_2(M: NDArray[np.float_], t: np.int_,
                        input_update_1in2out: NDArray[np.float_], input_update_2in1out: NDArray[np.float_],
@@ -44,8 +239,7 @@ def plot_performance_2(M: NDArray[np.float_], t: np.int_,
                        R_1in2out: NDArray[np.float_], R_2in1out: NDArray[np.float_],
                        loss_1in2out: NDArray[np.float_], loss_2in1out: NDArray[np.float_],
                        NET_1in2out: nx.DiGraph, NET_2in1out: nx.DiGraph,
-                       pos_lattice_1in2out: dict, pos_lattice_2in1out: dict,
-                       Colorscheme: "Color_Scheme", savestr: str = '') -> None:
+                       pos_lattice_1in2out: dict, pos_lattice_2in1out: dict, savestr: str = '') -> None:
     """
     2 rows of 4 subfigures:
     1) Mean Absolute Error a.f.o training time t
@@ -62,7 +256,7 @@ def plot_performance_2(M: NDArray[np.float_], t: np.int_,
     """
 
     # Set the custom color cycle globally without cycler
-    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', Colorscheme.colors_lst)
+    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', colors_lst)
 
     # sizes for 1 input 2 output
     A_1in2out: float = M[0]  # A = x_hat/p_in
@@ -98,10 +292,10 @@ def plot_performance_2(M: NDArray[np.float_], t: np.int_,
     # ---- Row 1 - 1 input 2 outputs ----
 
     # network structure
-    # node_colors_1in2out = [Colorscheme.colors_lst[1], Colorscheme.colors_lst[0], Colorscheme.colors_lst[0], 'black']
-    node_colors_1in2out = [Colorscheme.colors_lst[0], Colorscheme.colors_lst[1], Colorscheme.colors_lst[2], 'black']
-    edge_colors_1in2out = [Colorscheme.colors_lst[0], Colorscheme.colors_lst[1], Colorscheme.colors_lst[2],
-                           Colorscheme.colors_lst[3]]
+    # node_colors_1in2out = [colors_lst[1], colors_lst[0], colors_lst[0], 'black']
+    node_colors_1in2out = [colors_lst[0], colors_lst[1], colors_lst[2], 'black']
+    edge_colors_1in2out = [colors_lst[0], colors_lst[1], colors_lst[2],
+                           colors_lst[3]]
     nx.draw_networkx(NET_1in2out, pos=pos_lattice_both, edge_color=edge_colors_1in2out,
                      node_color=node_colors_1in2out, with_labels=False, arrows=True, font_color='white',
                      font_size=14, width=2, node_size=400, ax=ax1)
@@ -144,12 +338,12 @@ def plot_performance_2(M: NDArray[np.float_], t: np.int_,
     # ---- Row 1 - 2 inputs 1 output ----
 
     # network structure
-    node_colors_2in1out = [Colorscheme.colors_lst[0], Colorscheme.colors_lst[2], Colorscheme.colors_lst[1], 'black']
-    edge_colors_2in1out = [Colorscheme.colors_lst[0], Colorscheme.colors_lst[2], Colorscheme.colors_lst[1]]
+    node_colors_2in1out = [colors_lst[0], colors_lst[2], colors_lst[1], 'black']
+    edge_colors_2in1out = [colors_lst[0], colors_lst[2], colors_lst[1]]
     # Draw arrows for ax5
-    # draw_arrow(ax5, pos_lattice_both, 0, 2, color=Colorscheme.colors_lst[0], head_width=arrow_head_w)  # in to output
-    # draw_arrow(ax5, pos_lattice_both, 1, 2, color=Colorscheme.colors_lst[0], head_width=arrow_head_w)  # in to output
-    # draw_arrow(ax5, pos_lattice_both, 2, 3, color=Colorscheme.colors_lst[0], head_width=arrow_head_w)  # out to ground
+    # draw_arrow(ax5, pos_lattice_both, 0, 2, color=colors_lst[0], head_width=arrow_head_w)  # in to output
+    # draw_arrow(ax5, pos_lattice_both, 1, 2, color=colors_lst[0], head_width=arrow_head_w)  # in to output
+    # draw_arrow(ax5, pos_lattice_both, 2, 3, color=colors_lst[0], head_width=arrow_head_w)  # out to ground
     nx.draw_networkx(NET_2in1out, pos=pos_lattice_both, edge_color=edge_colors_2in1out,
                      node_color=node_colors_2in1out, with_labels=False, arrows=True, font_color='white',
                      font_size=14, width=2, node_size=400, ax=ax5)
@@ -196,8 +390,7 @@ def plot_performance_2(M: NDArray[np.float_], t: np.int_,
         plt.show()
 
 
-def loss_afo_in_out(loss_mat_lin: np.ndarray, loss_mat_nonlin: np.ndarray, Colorscheme: "Color_Scheme",
-                    savestr: str = '') -> None:
+def loss_afo_in_out(loss_mat_lin: np.ndarray, loss_mat_nonlin: np.ndarray, savestr: str = '') -> None:
     """
     Two-panel plot comparing linear and nonlinear update rules - ensemble mean of loss at end of training,
     shown on a logarithmic color scale.
@@ -208,8 +401,6 @@ def loss_afo_in_out(loss_mat_lin: np.ndarray, loss_mat_nonlin: np.ndarray, Color
         3D array [Nin, Nout, ensemble] for the linear system
     loss_mat_nonlin : np.ndarray
         3D array [Nin, Nout, ensemble] for the nonlinear system
-    Colorscheme : Color_Scheme
-        Object with a `.cmap` attribute defining the colormap
 
     Outputs:
     --------
@@ -243,7 +434,7 @@ def loss_afo_in_out(loss_mat_lin: np.ndarray, loss_mat_nonlin: np.ndarray, Color
     ax2 = fig.add_subplot(gs[1])
 
     # Linear update rule
-    ax1.imshow(loss_mean_lin, cmap=Colorscheme.cmap, norm=norm,
+    ax1.imshow(loss_mean_lin, cmap=cmap, norm=norm,
                vmin=(vmin if not log_scale else None), vmax=(vmax if not log_scale else None), origin='lower',
                extent=[min(Nin)-0.5, max(Nin)+0.5, min(Nout)-0.5, max(Nout)+0.5])
     ax1.set_title(r'$\dot{R} \propto \Delta p^{\,!}$')
@@ -254,7 +445,7 @@ def loss_afo_in_out(loss_mat_lin: np.ndarray, loss_mat_nonlin: np.ndarray, Color
     set_thicker_spines(ax1, linewidth=1.5)
 
     # Nonlinear update rule
-    im2 = ax2.imshow(loss_mean_nonlin, cmap=Colorscheme.cmap, norm=norm,
+    im2 = ax2.imshow(loss_mean_nonlin, cmap=cmap, norm=norm,
                      vmin=(vmin if not log_scale else None), vmax=(vmax if not log_scale else None), origin='lower',
                      extent=[min(Nin)-0.5, max(Nin)+0.5, min(Nout)-0.5, max(Nout)+0.5])
     ax2.set_title(r'$\dot{R} \propto \left(\Delta p^{\,!}\right)^3$')
@@ -279,7 +470,7 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
                              accuracy_in_t_deltaR_propto_deltap_nonlin: np.ndarray,
                              accuracy_in_t_deltaR_propto_deltap: np.ndarray,
                              accuracy_in_t_deltaR_propto_Q: np.ndarray,
-                             accuracy_in_t_deltaR_propto_Power: np.ndarray, Colorscheme: "Color_Scheme",
+                             accuracy_in_t_deltaR_propto_Power: np.ndarray,
                              Iris_PNG_folder: str, smooth: bool = True, window_size: int = 5,
                              savestr: str = '') -> None:
     """
@@ -290,7 +481,6 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
     t_for_accuracy - array of ints, times during simulation when accuracy was calculated
     accuracy_in_t  - array of floats, accuracy at simulation times "t_for_accuracy"
     dataset_shape  - shape of dataset used, for Iris it is [150, ?]
-    Colorscheme    - Object with a `.cmap` attribute defining the colormap
     smooth         - boolean of whether to perform moveing mean on test accuracy
     window_size    - int, moving mean window
 
@@ -325,7 +515,7 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
     # Add vertical lines at times where t finished cycle through dataset and targets were re-calculated
     for t in range(int(t_final)):
         if t % dataset_shape[0] == 0:
-            ax.axvline(x=t, color=Colorscheme.red, linestyle='--', linewidth=1, alpha=0.3)
+            ax.axvline(x=t, color=red, linestyle='--', linewidth=1, alpha=0.3)
 
     is_eps = savestr.endswith('.eps')
     opacity_eps = 1.0 if is_eps else opacity
@@ -334,7 +524,7 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
     ax.fill_between(t_for_accuracy_smoothed,
                     mean_accuracy - std,
                     mean_accuracy + std,
-                    color=Colorscheme.colors_lst[1],
+                    color=colors_lst[1],
                     alpha=opacity_eps,
                     zorder=1)
 
@@ -342,17 +532,17 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
     ax.plot(t_for_accuracy_smoothed,
             mean_accuracy,
             label='accuracy',
-            color=Colorscheme.colors_lst[0],
+            color=colors_lst[0],
             marker='.',
             linestyle='',
             zorder=2)
 
-    # ax.plot(t_for_accuracy_smoothed, mean_accuracy, label='accuracy', color=Colorscheme.colors_lst[0], marker='.',
+    # ax.plot(t_for_accuracy_smoothed, mean_accuracy, label='accuracy', color=colors_lst[0], marker='.',
     #         linestyle='')
 
     # # Plot confidence intervals using fill_between
     # ax.fill_between(t_for_accuracy_smoothed, mean_accuracy - std,
-    #                 mean_accuracy + std, color=Colorscheme.colors_lst[0], alpha=opacity)
+    #                 mean_accuracy + std, color=colors_lst[0], alpha=opacity)
 
     # axes
     ax.set_xlabel('$t$', fontsize=14)  # Set x-axis label with font size
@@ -386,8 +576,7 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
                                   accuracy_in_t_deltaR_propto_deltap_nonlin,
                                   accuracy_in_t_deltaR_propto_deltap,
                                   accuracy_in_t_deltaR_propto_Q,
-                                  accuracy_in_t_deltaR_propto_Power,
-                                  Colorscheme=Colorscheme)
+                                  accuracy_in_t_deltaR_propto_Power)
 
     # Thicker spines
     set_thicker_spines(plt.gca(), linewidth=1.5)  # apply to the current Axes
@@ -404,8 +593,7 @@ def plot_final_accuracy_bar_chart(ax: plt.Axes,
                                   accuracy_in_t_deltaR_propto_deltap_nonlin: np.ndarray,
                                   accuracy_in_t_deltaR_propto_deltap: np.ndarray,
                                   accuracy_in_t_deltaR_propto_Q: np.ndarray,
-                                  accuracy_in_t_deltaR_propto_Power: np.ndarray,
-                                  Colorscheme: "Color_Scheme") -> None:
+                                  accuracy_in_t_deltaR_propto_Power: np.ndarray) -> None:
     """
     Plots a bar chart of final average test accuracy into a provided Axes object.
     """
@@ -430,7 +618,7 @@ def plot_final_accuracy_bar_chart(ax: plt.Axes,
         stds.append(np.std(mean_per_trial))
 
     x = np.arange(len(legend))
-    colors = Colorscheme.colors_lst[:len(legend)]
+    colors = colors_lst[:len(legend)]
 
     ax.bar(x, means, yerr=stds, capsize=5, color=colors, edgecolor='black', linewidth=1.5, alpha=0.9)
     # ax.set_xticks(x)
@@ -458,7 +646,7 @@ def comparison_hidden_layers(Nin1_Nout7_Ninter0_lin: np.ndarray, Nin1_Nout7_Nint
                              Nin6_Nout1_Ninter0_nonlin: np.ndarray, Nin6_Nout1_Ninter6_nonlin: np.ndarray,
                              Nin6_Nout7_Ninter0_lin: np.ndarray, Nin6_Nout7_Ninter7_lin: np.ndarray,
                              Nin6_Nout7_Ninter0_nonlin: np.ndarray, Nin6_Nout7_Ninter7_nonlin: np.ndarray,
-                             Colorscheme: "Color_Scheme", savestr: str = '') -> None:
+                             savestr: str = '') -> None:
 
     window_size = 100
 
@@ -611,8 +799,7 @@ def comparison_hidden_layers(Nin1_Nout7_Ninter0_lin: np.ndarray, Nin1_Nout7_Nint
 
 
 def plot_comparison_GD_4in6out(R_Adalike_4in6out: NDArray[np.float_], R_GD_4in6out: NDArray[np.float_], Nout: int,
-                               cosine_sim_4in6out: NDArray[np.float_], Colorscheme: "Color_Scheme",
-                               window: int = 0, savestr: str = '') -> None:
+                               cosine_sim_4in6out: NDArray[np.float_], window: int = 0, savestr: str = '') -> None:
 
     """
     1) Bar plot of resistances at end of training using gradient descent (GD) and proposed scheme
@@ -625,7 +812,7 @@ def plot_comparison_GD_4in6out(R_Adalike_4in6out: NDArray[np.float_], R_GD_4in6o
     matplotlib plot
     """
     # Set color cycle globally
-    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', Colorscheme.colors_lst)
+    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', colors_lst)
 
     # omit output to ground
     R_Adalike_4in6out = R_Adalike_4in6out[-1][:-Nout]
@@ -659,8 +846,8 @@ def plot_comparison_GD_4in6out(R_Adalike_4in6out: NDArray[np.float_], R_GD_4in6o
     # ax0.set_xticks([0, 1, 2, 3])
     # ax0.plot(R_GD_4in6out_norm, R_Adalike_4in6out_norm, '.')
 
-    # color_cycle = Colorscheme.colors_lst + ['#000000'] + Colorscheme.colors_lst
-    color_cycle = [Colorscheme.colors_lst[0]]*len(R_GD_4in6out)
+    # color_cycle = colors_lst + ['#000000'] + colors_lst
+    color_cycle = [colors_lst[0]]*len(R_GD_4in6out)
     print('color_cycle', color_cycle)
     n_colors = Nout
 
@@ -710,8 +897,7 @@ def plot_comparison_GD_4in6out(R_Adalike_4in6out: NDArray[np.float_], R_GD_4in6o
         plt.show()
 
 
-def cos_sim_lin_nonlin(cos_mat_lin: np.ndarray, cos_mat_nonlin: np.ndarray, Colorscheme: "Color_Scheme",
-                       savestr: str = '') -> None:
+def cos_sim_lin_nonlin(cos_mat_lin: np.ndarray, cos_mat_nonlin: np.ndarray, savestr: str = '') -> None:
     """
     Two-panel plot comparing linear and nonlinear update rules - ensemble mean of loss at end of training,
     shown on a logarithmic color scale.
@@ -722,8 +908,6 @@ def cos_sim_lin_nonlin(cos_mat_lin: np.ndarray, cos_mat_nonlin: np.ndarray, Colo
         3D array [Nin, Nout, ensemble] for the linear system
     loss_mat_nonlin : np.ndarray
         3D array [Nin, Nout, ensemble] for the nonlinear system
-    Colorscheme : Color_Scheme
-        Object with a `.cmap` attribute defining the colormap
 
     Outputs:
     --------
@@ -747,7 +931,7 @@ def cos_sim_lin_nonlin(cos_mat_lin: np.ndarray, cos_mat_nonlin: np.ndarray, Colo
     ax2 = fig.add_subplot(gs[1])
 
     # Linear update rule
-    ax1.imshow(cos_mean_lin, cmap=Colorscheme.cmap, vmin=vmin, vmax=vmax, origin='lower',
+    ax1.imshow(cos_mean_lin, cmap=cmap, vmin=vmin, vmax=vmax, origin='lower',
                extent=[min(Nin)-0.5, max(Nin)+0.5, min(Nout)-0.5, max(Nout)+0.5])
     ax1.set_title(r'$\dot{R} \propto \Delta p$')
     ax1.set_xlabel('# Outputs')
@@ -757,7 +941,7 @@ def cos_sim_lin_nonlin(cos_mat_lin: np.ndarray, cos_mat_nonlin: np.ndarray, Colo
     set_thicker_spines(ax1, linewidth=1.5)
 
     # Nonlinear update rule
-    im2 = ax2.imshow(cos_mean_nonlin, cmap=Colorscheme.cmap, vmin=vmin, vmax=vmax, origin='lower',
+    im2 = ax2.imshow(cos_mean_nonlin, cmap=cmap, vmin=vmin, vmax=vmax, origin='lower',
                      extent=[min(Nin)-0.5, max(Nin)+0.5, min(Nout)-0.5, max(Nout)+0.5])
     ax2.set_title(r'$\dot{R} \propto \left(\Delta p\right)^3$')
     ax2.set_xlabel('# Outputs')
@@ -906,17 +1090,17 @@ def draw_arrow(ax, pos, src, dst, color='gray', arrowstyle='-|>', lw=2, head_wid
 #     line_styles = ['-', '-', '-', '--', '--']
 #     for i, key in enumerate(material_keys):
 #         plt.plot(t_for_accuracy_smoothed, mean_accuracies[key],
-#                  color=Colorscheme.colors_lst[i],
+#                  color=colors_lst[i],
 #                  linestyle=line_styles[i], linewidth=3, alpha=1., marker=None)
 
 #     for i, key in enumerate(material_keys):
 #         plt.fill_between(t_for_accuracy_smoothed,
 #                          mean_accuracies[key] - std_accuracies[key],
 #                          mean_accuracies[key] + std_accuracies[key],
-#                          color=Colorscheme.colors_lst[i], alpha=opacity)
+#                          color=colors_lst[i], alpha=opacity)
 
 #     for i in range(4):
-#         plt.plot([], [], color=Colorscheme.colors_lst[i], label=legend[i])
+#         plt.plot([], [], color=colors_lst[i], label=legend[i])
 
 #     # axes
 #     plt.xlabel('$t$', fontsize=14)
@@ -937,7 +1121,7 @@ def draw_arrow(ax, pos, src, dst, color='gray', arrowstyle='-|>', lw=2, head_wid
 #                             window_size: int = 10) -> None:
 
 #     # Set color cycle globally
-#     plt.rcParams['axes.prop_cycle'] = plt.cycler('color', Colorscheme.colors_lst)
+#     plt.rcParams['axes.prop_cycle'] = plt.cycler('color', colors_lst)
 
 #     # Normalize R values so maximal will be 1
 #     R_3in1out_Adaline_norm = R_3in1out_Adaline[-1] / np.max(R_3in1out_Adaline[-1])
@@ -1012,7 +1196,7 @@ def draw_arrow(ax, pos, src, dst, color='gray', arrowstyle='-|>', lw=2, head_wid
 #     matplotlib plot
 #     """
 #     # Set color cycle globally
-#     plt.rcParams['axes.prop_cycle'] = plt.cycler('color', Colorscheme.colors_lst)
+#     plt.rcParams['axes.prop_cycle'] = plt.cycler('color', colors_lst)
 
 #     # Normalize R values so maximal will be 1
 #     R_mine_1in2out_norm = R_mine_1in2out[-1] / np.max(R_mine_1in2out[-1])
@@ -1152,17 +1336,17 @@ def draw_arrow(ax, pos, src, dst, color='gray', arrowstyle='-|>', lw=2, head_wid
 #     line_styles = ['-', '-', '--', '--']
 #     for i, key in enumerate(material_keys):
 #         plt.plot(t_for_accuracy_smoothed, mean_accuracies[key],
-#                  color=Colorscheme.colors_lst[i],
+#                  color=colors_lst[i],
 #                  linestyle=line_styles[i], linewidth=3, alpha=1., marker=None)
 
 #     for i, key in enumerate(material_keys):
 #         plt.fill_between(t_for_accuracy_smoothed,
 #                          mean_accuracies[key] - std_accuracies[key],
 #                          mean_accuracies[key] + std_accuracies[key],
-#                          color=Colorscheme.colors_lst[i], alpha=opacity)
+#                          color=colors_lst[i], alpha=opacity)
 
 #     for i in range(4):
-#         plt.plot([], [], color=Colorscheme.colors_lst[i], label=legend[i])
+#         plt.plot([], [], color=colors_lst[i], label=legend[i])
 
 #     # axes
 #     plt.xlabel('$t$', fontsize=14)

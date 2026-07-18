@@ -12,6 +12,7 @@ from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
 from sklearn.utils import shuffle
 
 import functions
+from config import CFG
 
 
 # ===================================================
@@ -34,16 +35,23 @@ class User_Variables:
     outputs:
     Class instance User_Variables
     """
-    def __init__(self, iterations: int, Nin: int,  Nout: int, gamma: NDArray[np.float_], R_update: str,
-                 training_scheme: str, use_p_tag: bool, normalize_loss: bool, supress_prints: bool, task_type: str,
-                 dataset_type: str, measure_accuracy_every: Optional[int] = None, normalize_step: bool = False, 
-                 hysteresis: Optional[float] = None, R_max: float = 46.0, R_min: float = 1.0, anneal: bool = False,
-                 T_annealing=0.0, Ninter: int = 0, decay_R: float = 2e-6) -> None:
-        self.iterations: int = iterations
-        self.Nin: int = Nin
-        self.Nout: int = Nout
-        self.gamma: NDArray[np.float_] = gamma
-        self.use_p_tag: bool = use_p_tag
+    def __init__(self, iterations: int = CFG.Sprvsr.iterations, Nin: int = CFG.Strctr.Nin,
+                 Nout: int = CFG.Strctr.Nout, gamma: NDArray[np.float_] = CFG.Variabs.gamma,
+                 R_update: str = CFG.Variabs.R_update, training_scheme: str = CFG.Sprvsr.training_scheme,
+                 use_p_tag: bool = CFG.Sprvsr.use_p_tag, normalize_loss: bool = CFG.Sprvsr.normalize_loss,
+                 supress_prints: bool = CFG.Sprvsr.supress_prints, task_type: str = CFG.Sprvsr.task_type,
+                 dataset_type: str = CFG.Sprvsr.dataset_type,
+                 measure_accuracy_every: Optional[int] = CFG.Sprvsr.measure_accuracy_every,
+                 normalize_step: bool = CFG.Variabs.normalize_step,
+                 hysteresis: Optional[float] = CFG.Variabs.hysteresis, R_max: float = CFG.Variabs.R_max,
+                 R_min: float = CFG.Variabs.R_min, anneal: bool = CFG.Sprvsr.anneal,
+                 T_annealing: float = CFG.Sprvsr.T_annealing, Ninter: int = CFG.Strctr.Ninter,
+                 decay_R: float = CFG.Variabs.decay_R) -> None:
+        self.iterations: int = int(iterations)
+        self.Nin: int = int(Nin)
+        self.Nout: int = int(Nout)
+        self.gamma: NDArray[np.float_] = np.asarray(gamma, dtype=float).copy()
+        self.use_p_tag: bool = bool(use_p_tag)
         if use_p_tag:
             self.loss_fn: Union[Callable[[np.ndarray, np.ndarray, np.ndarray, np.ndarray,
                                           Optional[np.float_], Optional[np.float_], Optional[np.float_]], np.ndarray],
@@ -51,12 +59,12 @@ class User_Variables:
                                          np.ndarray]] = functions.loss_fn_2samples
         else:
             self.loss_fn = functions.loss_fn_1sample
-        self.R_update: str = R_update
-        self.training_scheme: str = training_scheme
-        self.supress_prints: bool = supress_prints
-        self.task_type: str = task_type
-        self.dataset_type: str = dataset_type
-        self.normalize_step: bool = normalize_step
+        self.R_update: str = str(R_update)
+        self.training_scheme: str = str(training_scheme)
+        self.supress_prints: bool = bool(supress_prints)
+        self.task_type: str = str(task_type)
+        self.dataset_type: str = str(dataset_type)
+        self.normalize_step: bool = bool(normalize_step)
         if task_type == 'Iris_classification' and self.Nin != 4 and self.Nout != 3:
             print('mismatched # of inputs and outputs for Iris classification. correcting accordingly to Nin=4 Nout=3')
             self.Nin = 4
@@ -81,10 +89,10 @@ class User_Variables:
 
         # # predetermined ones
         self.lam: float = -80.0**(1)
-        self.include_Power: bool = False
+        self.include_Power: bool = CFG.Sprvsr.include_Power
         self.extraNin: int = 0
         self.extraNout: int = 0
-        self.access_interNodes: bool = False
+        self.access_interNodes: bool = CFG.Sprvsr.access_interNodes
         self.p_thresh = 0.1  # threshold of pressure to move bead in net_type 'beads'
         self.bc_noise: float = 0.0  # noise to update modality
 

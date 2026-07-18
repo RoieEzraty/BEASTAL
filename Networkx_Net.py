@@ -7,7 +7,8 @@ from numpy import array, zeros
 from typing import TYPE_CHECKING
 from numpy.typing import NDArray
 
-import plot_functions
+import plot_funcs
+from config import CFG
 
 if TYPE_CHECKING:
     from Big_Class import Big_Class
@@ -22,10 +23,10 @@ class Networkx_Net:
     """
     Networkx_net contains networkx data for plots
     """
-    def __init__(self, scale: float, squish: float) -> None:
+    def __init__(self, scale: float = CFG.NET.scale, squish: float = CFG.NET.squish) -> None:
         super(Networkx_Net, self).__init__()
-        self.scale = scale
-        self.squish = squish
+        self.scale = float(scale)
+        self.squish = float(squish)
 
     def buildNetwork(self, BigClass: "Big_Class") -> None:
         """
@@ -112,7 +113,7 @@ class Networkx_Net:
             pos_lattice = nx.spring_layout(self.NET, k=1.0, iterations=20)
         self.pos_lattice = pos_lattice
         if plot:
-            plot_functions.plotNetStructure(self.NET, BigClass, pos_lattice, node_labels=node_labels)
+            plot_funcs.plotNetStructure(self.NET, BigClass, pos_lattice, node_labels=node_labels)
 
     def save_R_reordered(self, R_vec: NDArray[np.float_], EIEJ_plots: list[Tuple]) -> None:
 

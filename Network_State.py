@@ -8,6 +8,7 @@ from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
 import functions, solve, statistics, matrix_functions
+from config import CFG
 
 if TYPE_CHECKING:
     from User_Variables import User_Variables
@@ -87,7 +88,8 @@ class Network_State:
         # resistances for bead net as if w/out beads
         self.R_backg: NDArray[np.float_] = BigClass.Variabs.R_min * np.ones(BigClass.Strctr.NE)
 
-    def initiate_accuracy_vec(self, BigClass: "Big_Class", measure_accuracy_every: int) -> None:
+    def initiate_accuracy_vec(self, BigClass: "Big_Class",
+                              measure_accuracy_every: int = CFG.Sprvsr.measure_accuracy_every) -> None:
         """
         For classification task, initiate array for accuracy with length=iteration/measure_accuracy_every
 
