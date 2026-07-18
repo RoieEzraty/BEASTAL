@@ -28,8 +28,8 @@ class StructureConfig:
 class VariablesConfig:
     """Physical update-rule parameters."""
 
-    R_update: str = "deltaR_propto_dp"
-    # R_update: str = "deltaR_propto_dp_nonlin"
+    # R_update: str = "deltaR_propto_dp"
+    R_update: str = "deltaR_propto_dp_nonlin"
     gamma: NDArray[np.float_] = field(default_factory=lambda: np.array([1.0]))
     R_max: float = 2.0
     R_min: float = 0.02
@@ -55,7 +55,7 @@ class SupervisorConfig:
     training_scheme: str = "Adaline"
     iterations: int = 2000
     alpha: float = 0.028
-    alpha_nonlin: float = alpha * 10
+    alpha_scale_nonlin: float = 50.0
     use_p_tag: bool = False
     stay_sample: int = 1
     normalize_loss: bool = True

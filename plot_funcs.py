@@ -55,8 +55,8 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     1 matplotlib plot
     """
 
-    Nin = BigClass.Variabs.Nin
-    Nout = BigClass.Variabs.Nout
+    Nin = BigClass.Strctr.Nin
+    Nout = BigClass.Strctr.Nout
     t = BigClass.State.t
 
     # Set the custom color cycle globally without cycler
@@ -82,7 +82,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
 
     # Loss
     for t in range(t):
-        if t % len(BigClass.Variabs.dataset) == 0 and t != 0 and BigClass.Variabs.task_type != 'Regression':
+        if t % len(BigClass.Sprvsr.dataset) == 0 and t != 0 and BigClass.Sprvsr.task_type != 'Regression':
             ax1.axvline(x=t, color='red', linestyle='--', linewidth=1)
     if movmean_loss:
         movmean_loss_t = statistics.mov_ave(BigClass.State.loss_scalar_in_t, 16)
@@ -98,7 +98,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     # Update modality
     ax2.plot(BigClass.State.output_update_in_t[1:])
     ax2.plot(BigClass.State.input_update_in_t[1:])
-    if BigClass.Variabs.access_interNodes:
+    if BigClass.Sprvsr.access_interNodes:
         ax2.plot(BigClass.State.inter_update_in_t[1:])
     ax2.set_title('"Update" modality pressure')
     ax2.set_xlabel('t')

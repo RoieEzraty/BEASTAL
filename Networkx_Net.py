@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from numpy.typing import NDArray
 
 import plot_funcs
-from config import CFG
+from config import ExperimentConfig
 
 if TYPE_CHECKING:
     from Big_Class import Big_Class
@@ -23,10 +23,10 @@ class Networkx_Net:
     """
     Networkx_net contains networkx data for plots
     """
-    def __init__(self, scale: float = CFG.NET.scale, squish: float = CFG.NET.squish) -> None:
+    def __init__(self, config: ExperimentConfig) -> None:
         super(Networkx_Net, self).__init__()
-        self.scale = float(scale)
-        self.squish = float(squish)
+        self.scale = config.NET.scale
+        self.squish = config.NET.squish
 
     def buildNetwork(self, BigClass: "Big_Class") -> None:
         """

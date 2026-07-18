@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from Supervisor_Class import Supervisor
     from User_Variables import User_Variables
     from Network_State import Network_State
     from Network_Structure import Network_Structure
@@ -17,8 +18,14 @@ class Big_Class:
     Big_Class contains the main classes under Network Simulation
     """
 
-    def __init__(self, Variabs: "User_Variables"):
+    def __init__(self, Strctr: "Network_Structure") -> None:
+        self.Strctr = Strctr
+
+    def add_Variabs(self, Variabs: "User_Variables") -> None:
         self.Variabs = Variabs
+
+    def add_Sprvsr(self, Sprvsr: "Supervisor") -> None:
+        self.Sprvsr = Sprvsr
 
     def add_Strctr(self, Strctr: "Network_Structure"):
         self.Strctr = Strctr

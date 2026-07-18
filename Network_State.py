@@ -8,10 +8,11 @@ from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
 import functions, solve, statistics, matrix_functions
-from config import CFG
+from config import ExperimentConfig
 
 if TYPE_CHECKING:
     from User_Variables import User_Variables
+    from Supervisor_Class import Supervisor
     from Big_Class import Big_Class
     from Network_Structure import Network_Structure
 
@@ -27,9 +28,9 @@ class Network_State:
     what ends with _in_t holds all time instances of the variable, each list index is different t
     what ends w/out _in_t is at current time instance self.t
     """
-    def __init__(self, Variabs: "User_Variables", input_update_initial: NDArray[np.float_] = array([]),
-                 output_update_initial: NDArray[np.float_] = array([])) -> None:
+    def __init__(self, config: ExperimentConfig, BigClass: "Big_Class") -> None:
         super().__init__()
+        self.initial_R: NDArray[np.float_] = np.asarray(config.State.R_vec_i, dtype=float).copy()
         self.t: int = 0  # time, defined as number of R updates, i.e. times the learning rate alpha is used.
         self.p: NDArray[np.float_] = array([])  # pressure
         self.u: NDArray[np.float_] = array([])  # flow rate
@@ -41,22 +42,14 @@ class Network_State:
         self.extraOutput_in_t: List[NDArray[np.float_]] = []  # pressure at additional outputs, loss not calculated
         self.desired_in_t: List[NDArray[np.float_]] = []  # desired output pressure for each sample, input dependent
         # "update" modality
-        if input_update_initial.size:
-            self.input_update_in_t: List[NDArray[np.float_]] = [input_update_initial]
-        else:
-            self.input_update_in_t = [1. * np.ones(Variabs.Nin)]
-        self.extraInput_update_in_t: List[NDArray[np.float_]] = [1. * np.ones(Variabs.extraNin)]
-        self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Variabs.Ninter)]
-        if output_update_initial.size:
-            self.output_update_in_t: List[NDArray[np.float_]] = [output_update_initial]
-        else:
-            self.output_update_in_t = [0.5 * np.ones(Variabs.Nout)]
-        self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Variabs.extraNout)]
-        if Variabs.hysteresis:
+        Strctr = BigClass.Strctr
+        self.input_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.Nin)]
+        self.extraInput_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.extraNin)]
+        self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
+        self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
+        self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
+        if BigClass.Variabs.hysteresis:
             self.hysteresis = 0
-        # learning rate
-        self.alpha_in_t = Variabs.alpha_vec[0]*np.ones([Variabs.iterations])
-        self.alpha: np.float_ = Variabs.alpha_vec[0]
         # Loss and Power
         self.loss_in_t: List[NDArray[np.float_]] = []
         self.loss_scalar_in_t: List[NDArray[np.float_]] = []
@@ -80,16 +73,18 @@ class Network_State:
                 self.R_in_t: List[NDArray[np.float_]] = [np.ones((BigClass.Strctr.NE), dtype=float)]
             else:
                 self.R_in_t = [R_vec_i]
-        else:  # uniform resistances - not user specified
-            self.R_in_t = [np.ones((BigClass.Strctr.NE), dtype=float)]
+        else:
+            if np.size(self.initial_R) == BigClass.Strctr.NE:
+                self.R_in_t = [self.initial_R.copy()]
+            else:
+                self.R_in_t = [np.ones(BigClass.Strctr.NE, dtype=float)]
 
         if add_noise:
             self.R_in_t[0] += np.random.normal(loc=0.0, scale=add_noise, size=BigClass.Strctr.NE)
         # resistances for bead net as if w/out beads
         self.R_backg: NDArray[np.float_] = BigClass.Variabs.R_min * np.ones(BigClass.Strctr.NE)
 
-    def initiate_accuracy_vec(self, BigClass: "Big_Class",
-                              measure_accuracy_every: int = CFG.Sprvsr.measure_accuracy_every) -> None:
+    def initiate_accuracy_vec(self, BigClass: "Big_Class") -> None:
         """
         For classification task, initiate array for accuracy with length=iteration/measure_accuracy_every
 
@@ -97,11 +92,12 @@ class Network_State:
         BigClass               - class instance including User_Variables, Network_Structure instances, etc.
         measure_accuracy_every - measure accuracy every # steps, user input
         """
-        accuracy_size = int(np.floor(BigClass.Variabs.iterations/measure_accuracy_every))
+        measure_accuracy_every = BigClass.Sprvsr.measure_accuracy_every
+        accuracy_size = int(np.floor(BigClass.Sprvsr.iterations/measure_accuracy_every))
         self.accuracy_in_t: NDArray[np.float_] = zeros(accuracy_size)
         self.t_for_accuracy: NDArray[np.int_] = zeros(accuracy_size, dtype=np.int_)
 
-    def draw_p_in_and_desired(self, Variabs: "User_Variables", i: int, noise_to_extra: Optional[bool] = False,
+    def draw_p_in_and_desired(self, Sprvsr: "Supervisor", i: int, noise_to_extra: Optional[bool] = False,
                               modality: Optional[str] = "measure") -> None:
         """
         Every time step, draw random input pressures and calculate the desired output given input
@@ -120,28 +116,28 @@ class Network_State:
         """
         # draw  input from train or test sets
         if modality == 'measure_for_accuracy':
-            self.input_drawn: NDArray[np.float_] = copy.copy(Variabs.X_test[i % np.shape(Variabs.X_test)[0]])
+            self.input_drawn: NDArray[np.float_] = copy.copy(Sprvsr.X_test[i % np.shape(Sprvsr.X_test)[0]])
         else:
-            self.input_drawn = copy.copy(Variabs.X_train[i % np.shape(Variabs.X_train)[0]])
+            self.input_drawn = copy.copy(Sprvsr.X_train[i % np.shape(Sprvsr.X_train)[0]])
 
         # draw noise if needed
         if noise_to_extra:
-            self.extraInput += Variabs.noise_in[i % np.shape(Variabs.noise_in)[0]]
+            self.extraInput += Sprvsr.noise_in[i % np.shape(Sprvsr.noise_in)[0]]
             self.extraOutput: NDArray[np.float_] = copy.copy(self.extraOutput_in_t[-1])
-            self.extraOutput += Variabs.noise_out[i % np.shape(Variabs.noise_out)[0]]
+            self.extraOutput += Sprvsr.noise_out[i % np.shape(Sprvsr.noise_out)[0]]
             self.inter: NDArray[np.float_] = copy.copy(self.inter) + \
-                Variabs.noise_inter[i % np.shape(Variabs.noise_inter)[0]]
+                Sprvsr.noise_inter[i % np.shape(Sprvsr.noise_inter)[0]]
 
         # calculate desired output from train or test sets
-        if Variabs.task_type == 'Iris_classification':
+        if Sprvsr.task_type == 'Iris_classification':
             if modality == 'measure_for_accuracy':
                 self.desired: NDArray[np.float_] = \
-                    np.matmul(Variabs.y_test[i % np.shape(Variabs.X_test)[0]], self.targets_mat)
+                    np.matmul(Sprvsr.y_test[i % np.shape(Sprvsr.X_test)[0]], self.targets_mat)
             else:
                 self.desired = \
-                    np.matmul(Variabs.y_train[i % np.shape(Variabs.X_train)[0]], self.targets_mat)
+                    np.matmul(Sprvsr.y_train[i % np.shape(Sprvsr.X_train)[0]], self.targets_mat)
         else:
-            self.desired = Variabs.y_train[i % np.shape(Variabs.X_train)[0]]
+            self.desired = Sprvsr.y_train[i % np.shape(Sprvsr.X_train)[0]]
 
         # append to arrays in time
         if modality == 'measure_for_accuracy':  # don't add to time vector if this is accuracy calculation
@@ -152,12 +148,12 @@ class Network_State:
             self.desired_in_t.append(self.desired)
 
         # optionally print to user
-        if not Variabs.supress_prints:
+        if not Sprvsr.supress_prints:
             print('input_drawn', self.input_drawn)
             # print('extraInput', self.extraInput)
             print('desired output=', self.desired)
 
-    def draw_p_means_Iris(self, Variabs: "User_Variables", i: int) -> None:
+    def draw_p_means_Iris(self, Sprvsr: "Supervisor", i: int) -> None:
         """
         Draw input pressure as mean value of every class of Iris dataset.
 
@@ -168,7 +164,7 @@ class Network_State:
         outputs
         input_drawn: np.ndarray sized [Nin,], input pressures
         """
-        self.input_drawn = Variabs.means[i]
+        self.input_drawn = Sprvsr.means[i]
 
     def assign_targets_Iris(self, BigClass: "Big_Class") -> None:
         """
@@ -185,13 +181,13 @@ class Network_State:
         """
         targets_mat: NDArray[np.float_] = zeros([3, 3], dtype=np.float_)
         for j in range(3):  # go over all 3 Iris classes
-            self.draw_p_means_Iris(BigClass.Variabs, j)  # compute class-mean input for class j
+            self.draw_p_means_Iris(BigClass.Sprvsr, j)  # compute class-mean input for class j
             self.solve_flow_given_modality(BigClass, "measure_for_mean")  # simulate without changing resistances
             targets_mat[j] = self.output  # The new target is the outputs of the mean input
         self.targets_mat: NDArray[np.float_] = targets_mat  # save into targets_mat array
 
         # optionally print to user
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             print('targets_mat', self.targets_mat)
 
     def solve_flow_given_modality(self, BigClass: "Big_Class", modality: str,
@@ -239,7 +235,7 @@ class Network_State:
                 nodeData_tuple = (self.input_drawn, self.extraInput)
         elif modality == 'update':
             # Access inter nodes if needed
-            inters = BigClass.Variabs.access_interNodes or access_inters
+            inters = BigClass.Sprvsr.access_interNodes or access_inters
 
             nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
                            BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
@@ -271,7 +267,7 @@ class Network_State:
             self.extraOutput = copy.copy(self.p[BigClass.Strctr.extraOutput_nodes_arr].ravel())
 
             # print
-            if not BigClass.Variabs.supress_prints:
+            if not BigClass.Sprvsr.supress_prints:
                 # print('inter measured=', self.inter)
                 print('output measured=', self.output)
                 # print('extraOutput measured=', self.extraOutput)
@@ -280,19 +276,6 @@ class Network_State:
                 self.output_in_t.append(self.output)
                 self.extraOutput_in_t.append(self.extraOutput)
                 self.inter_in_t.append(self.inter)
-
-    def update_alpha(self, BigClass: "Big_Class", T_annealing: float) -> None:
-        """
-        update learning rate alpha for annealing scheme
-
-        inputs:
-        BigClass    - Class instance containing User_Variables, Network_Structure, etc.
-        T_annealing - float, exponent time of annealing. larger T = slower annealing
-        """
-        self.alpha = BigClass.Variabs.alpha_vec[0] * \
-            np.exp(-BigClass.State.t / (T_annealing * BigClass.Variabs.iterations))
-        # np.cos(np.pi * BigClass.State.t / BigClass.Variabs.T_annealing)**2
-        self.alpha_in_t[self.t] = self.alpha
 
     def update_input(self, BigClass: "Big_Class") -> None:
         """
@@ -309,19 +292,19 @@ class Network_State:
         input_update: NDArray[np.float_] = self.input_update_in_t[-1]
         input_drawn: NDArray[np.float_] = self.input_drawn_in_t[-1]
 
-        if BigClass.Variabs.training_scheme in ['GD_like', 'Adaline']:
+        if BigClass.Sprvsr.training_scheme in ['GD_like', 'Adaline']:
             delta: NDArray[np.float_] = - self.update_vec[BigClass.Strctr.input_nodes_arr]
         else:
-            if BigClass.Variabs.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
+            if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
                 input_drawn_prev: NDArray[np.float_] = self.input_drawn_in_t[-2]
             else:  # use zero input, output and loss for 2nd sample
-                input_drawn_prev = np.zeros([BigClass.Variabs.Nin])
-                loss = np.array([copy.copy(loss[0]), np.zeros([BigClass.Variabs.Nout])])  # good loss dims for next "if"
-            if BigClass.Variabs.normalize_loss:
-                delta = (input_drawn-input_drawn_prev) * self.alpha * \
+                input_drawn_prev = np.zeros([BigClass.Strctr.Nin])
+                loss = np.array([copy.copy(loss[0]), np.zeros([BigClass.Strctr.Nout])])  # good loss dims for next "if"
+            if BigClass.Sprvsr.normalize_loss:
+                delta = (input_drawn-input_drawn_prev) * BigClass.Sprvsr.alpha * \
                     (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
             else:
-                delta = (input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
+                delta = (input_drawn-input_drawn_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
 
         # update modality is different under schemes of change of R
 
@@ -329,7 +312,7 @@ class Network_State:
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
             self.input_update_nxt: NDArray[np.float_] = input_update - delta
         elif R_update == 'beads':
-            self.input_update_nxt = input_update + self.alpha * np.mean(np.abs(loss[0]))
+            self.input_update_nxt = input_update + BigClass.Sprvsr.alpha * np.mean(np.abs(loss[0]))
         # else if no memory
         elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
@@ -345,7 +328,7 @@ class Network_State:
         self.input_update_in_t.append(self.input_update_nxt)  # append into list in time
 
         # print
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             print('input_update_nxt=', self.input_update_nxt)
 
     def update_extraInput(self, BigClass: "Big_Class"):
@@ -365,11 +348,11 @@ class Network_State:
         extraInput: NDArray[np.float_] = self.extraInput_in_t[-1]
 
         # dot product for alpha in pressure update
-        if BigClass.Variabs.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
+        if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
             extraInput_prev: NDArray[np.float_] = self.extraInput_in_t[-2]
-            delta: NDArray[np.float_] = (extraInput-extraInput_prev) * self.alpha * np.mean(loss[0]-loss[1])
+            delta: NDArray[np.float_] = (extraInput-extraInput_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
         else:  # if one sample of p in for every loss calcaultion are to be taken
-            delta = extraInput * self.alpha * np.mean(loss[0])
+            delta = extraInput * BigClass.Sprvsr.alpha * np.mean(loss[0])
 
         # update modality is different under schemes of change of R
 
@@ -390,13 +373,13 @@ class Network_State:
         self.extraInput_update_in_t.append(self.extraInput_update_nxt)  # append into list in time
 
         # print
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             print('extraInput_update_nxt=', self.extraInput_update_nxt)
 
     def update_inter(self, BigClass: "Big_Class") -> None:
         """
         Calculates next inter nodes pressure values in update modality given measurement, for 1 or 2 sampled pressures
-        only for when Variabs.access_interNodes==True
+        only for when Sprvsr.access_interNodes==True
 
         inputs:
         BigClass: Class instance containing User_Variables, Network_Structure, etc.
@@ -410,22 +393,22 @@ class Network_State:
         inter: NDArray[np.float_] = self.inter_in_t[-1]
 
         # dot product for alpha in inter nodes pressure update
-        if BigClass.Variabs.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
+        if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
             inter_prev: NDArray[np.float_] = self.inter_in_t[-2]
-            delta: NDArray[np.float_] = (inter-inter_prev) * self.alpha * np.mean(loss[0]-loss[1])
+            delta: NDArray[np.float_] = (inter-inter_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
         else:  # if one sample of p in for every loss calcaultion are to be taken
-            delta = inter * self.alpha * np.mean(loss[0])
+            delta = inter * BigClass.Sprvsr.alpha * np.mean(loss[0])
 
         # update modality is different under schemes of change of R
 
         # w/ memory
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
-            # self.inter_update_nxt = inter_update - delta + 0.01*np.random.randn(BigClass.Variabs.Ninter)
+            # self.inter_update_nxt = inter_update - delta + 0.01*np.random.randn(BigClass.Strctr.Ninter)
             self.inter_update_nxt = inter_update - delta
         # else if no memory
         elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
-            # self.inter_update_nxt = - delta + 0.01*np.random.randn(BigClass.Variabs.Ninter)
+            # self.inter_update_nxt = - delta + 0.01*np.random.randn(BigClass.Strctr.Ninter)
             self.inter_update_nxt = - delta
         elif R_update == 'grad_desc':
             self.inter_update_nxt = inter_update
@@ -438,7 +421,7 @@ class Network_State:
         self.inter_update_in_t.append(self.inter_update_nxt)  # append into list in time
 
         # print
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             print('inter_update_nxt=', self.inter_update_nxt)
 
     def update_output(self, BigClass: "Big_Class"):
@@ -456,22 +439,22 @@ class Network_State:
         output_update: NDArray[np.float_] = copy.copy(self.output_update_in_t[-1])
 
         # element-wise multiplication for alpha in output update
-        if BigClass.Variabs.training_scheme in ['GD_like', 'Adaline']:
+        if BigClass.Sprvsr.training_scheme in ['GD_like', 'Adaline']:
             delta: NDArray[np.float_] = self.update_vec[BigClass.Strctr.output_nodes_arr]
         else:
-            if BigClass.Variabs.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
+            if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
                 output_prev: NDArray[np.float_] = self.output_in_t[-2]
-                if BigClass.Variabs.normalize_loss:
+                if BigClass.Sprvsr.normalize_loss:
                     loss_multip = (loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1])
                 else:
                     loss_multip = loss[0]-loss[1]
-                delta = self.alpha * (self.output-output_prev) * loss_multip  # normalize loss
+                delta = BigClass.Sprvsr.alpha * (self.output-output_prev) * loss_multip  # normalize loss
             else:
-                if BigClass.Variabs.normalize_loss:
+                if BigClass.Sprvsr.normalize_loss:
                     loss_multip = loss[0]/np.linalg.norm(loss[0])
                 else:
                     loss_multip = loss[0]
-                delta = self.alpha * self.output * loss_multip  # normalize loss
+                delta = BigClass.Sprvsr.alpha * self.output * loss_multip  # normalize loss
                 
         # update modality is different under schemes of change of R
 
@@ -479,7 +462,7 @@ class Network_State:
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
             self.output_update_nxt = output_update + delta
         elif R_update == 'beads':
-            self.output_update_nxt = output_update + self.alpha * np.mean(loss[0])
+            self.output_update_nxt = output_update + BigClass.Sprvsr.alpha * np.mean(loss[0])
         # else if no memory
         elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
@@ -495,7 +478,7 @@ class Network_State:
         self.output_update_in_t.append(self.output_update_nxt)
 
         # print
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             print('output_update_nxt', self.output_update_nxt)
 
     def update_extraOutput(self, BigClass: "Big_Class"):
@@ -512,11 +495,11 @@ class Network_State:
         loss: NDArray[np.float_] = self.loss_in_t[-1]
         extraOutput_update: NDArray[np.float_] = copy.copy(self.extraOutput_update_in_t[-1])
         # element-wise multiplication for alpha in output update
-        if BigClass.Variabs.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
+        if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
             extraOutput_prev: NDArray[np.float_] = self.extraOutput_in_t[-2]
-            delta: NDArray[np.float_] = (self.extraOutput-extraOutput_prev) * self.alpha * np.mean(loss[0]-loss[1])
+            delta: NDArray[np.float_] = (self.extraOutput-extraOutput_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
         else:
-            delta = self.extraOutput * self.alpha * np.mean(loss[0])
+            delta = self.extraOutput * BigClass.Sprvsr.alpha * np.mean(loss[0])
         # update modality is different under schemes of change of R
 
         # w/ memory
@@ -537,7 +520,7 @@ class Network_State:
         self.extraOutput_update_in_t.append(self.extraOutput_update_nxt)
 
         # print
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             print('extraOutput_update_nxt', self.extraOutput_update_nxt)
 
     def update_Rs(self, BigClass: "Big_Class", delta_K=[]) -> None:
@@ -565,7 +548,7 @@ class Network_State:
         if BigClass.Variabs.R_update in {'deltaR_propto_dp', 'deltaR_propto_dp_decay'}:  # delta_R propto p_in-p_out
             delta_R = BigClass.Variabs.gamma*delta_p * update_cond
             if BigClass.Variabs.normalize_step:
-                delta_R_norm = self.alpha * delta_R / np.linalg.norm(delta_R)
+                delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
                 R_nxt: NDArray[np.float_] = self.R_in_t[-1] + delta_R_norm
             else:
                 if BigClass.Variabs.R_update == 'deltaR_propto_dp_decay':  # update and add decay of resistance to 1
@@ -593,7 +576,7 @@ class Network_State:
         elif BigClass.Variabs.R_update in {'deltaR_propto_dp_nonlin', 'deltaR_propto_dp_nonlin_decay'}:  # non linear rules 
             delta_R = BigClass.Variabs.gamma*(delta_p)**3 * update_cond
             if BigClass.Variabs.normalize_step:
-                delta_R_norm = self.alpha * delta_R / np.linalg.norm(delta_R)
+                delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
                 R_nxt = self.R_in_t[-1] + delta_R_norm
             else:
                 if BigClass.Variabs.R_update == 'deltaR_propto_dp_nonlin_decay':  # update and add decay of resistance to 1
@@ -606,11 +589,11 @@ class Network_State:
                 print('error, no delta_K vector supplied')
             else:
                 K_vec = matrix_functions.K_from_R(self.R_in_t[-1])
-                K_vec_nxt = K_vec + self.alpha * delta_K
+                K_vec_nxt = K_vec + BigClass.Sprvsr.alpha * delta_K
                 R_nxt = 1/K_vec_nxt
                 if BigClass.Variabs.normalize_step:
                     delta_R = R_nxt - self.R_in_t[-1]
-                    delta_R_norm = self.alpha * delta_R / np.linalg.norm(delta_R)
+                    delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
                     R_nxt = self.R_in_t[-1] + delta_R_norm
             self.R_in_t.append(R_nxt)
         elif BigClass.Variabs.R_update == 'deltaR_propto_Power':  # delta_R propto Power dissipation dp*Q
@@ -628,7 +611,7 @@ class Network_State:
             BigClass.State.hysteresis[BigClass.State.hysteresis < -BigClass.Variabs.hyst_thresh] = -BigClass.Variabs.hyst_thresh
 
         # print
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             pass
 
         self.R_in_t[-1][self.R_in_t[-1] < 10**-12] = 10**-12  # inhibit vanishing R - already accounted for above?
@@ -713,22 +696,22 @@ class Network_State:
         outputs:
         loss: np.ndarray sized [Nout,]
         """
-        if BigClass.Variabs.loss_fn == functions.loss_fn_2samples:
-            if BigClass.Variabs.include_Power:
-                self.loss: NDArray[np.float_] = BigClass.Variabs.loss_fn(self.output, self.output_in_t[-2],
+        if BigClass.Sprvsr.loss_fn == functions.loss_fn_2samples:
+            if BigClass.Sprvsr.include_Power:
+                self.loss: NDArray[np.float_] = BigClass.Sprvsr.loss_fn(self.output, self.output_in_t[-2],
                                                                          self.desired, self.desired_in_t[-2],
                                                                          self.Power_norm, self.Power_norm_in_t[-2],
-                                                                         BigClass.Variabs.lam)
+                                                                         BigClass.Sprvsr.lam)
             else:
-                self.loss: NDArray[np.float_] = BigClass.Variabs.loss_fn(self.output, self.output_in_t[-2],
+                self.loss: NDArray[np.float_] = BigClass.Sprvsr.loss_fn(self.output, self.output_in_t[-2],
                                                                          self.desired, self.desired_in_t[-2])
-        elif BigClass.Variabs.loss_fn == functions.loss_fn_1sample:
-            if BigClass.Variabs.include_Power:
+        elif BigClass.Sprvsr.loss_fn == functions.loss_fn_1sample:
+            if BigClass.Sprvsr.include_Power:
                 print('Power_norm', self.Power_norm)
-                print('lam', BigClass.Variabs.lam)
-                self.loss = BigClass.Variabs.loss_fn(self.output, self.desired, self.Power_norm, BigClass.Variabs.lam)
+                print('lam', BigClass.Sprvsr.lam)
+                self.loss = BigClass.Sprvsr.loss_fn(self.output, self.desired, self.Power_norm, BigClass.Sprvsr.lam)
             else:
-                self.loss = BigClass.Variabs.loss_fn(self.output, self.desired)
+                self.loss = BigClass.Sprvsr.loss_fn(self.output, self.desired)
         self.loss_in_t.append(self.loss)
 
     def calc_update_vals_vec(self, BigClass: "Big_Class") -> None:
@@ -748,7 +731,7 @@ class Network_State:
         in_nodes = copy.copy(BigClass.Strctr.input_nodes_arr)
         out_nodes = copy.copy(BigClass.Strctr.output_nodes_arr)
         ground_nodes = copy.copy(BigClass.Strctr.ground_nodes_arr)
-        if BigClass.Variabs.training_scheme == 'GD_like':
+        if BigClass.Sprvsr.training_scheme == 'GD_like':
             L_vec: NDArray[np.float_] = np.zeros(BigClass.Strctr.NN)
             L_vec[out_nodes] = self.loss
             delta_p = np.matmul(BigClass.Strctr.DM, self.p[:BigClass.Strctr.NN]).T
@@ -758,11 +741,11 @@ class Network_State:
             # C_vec: NDArray[np.float_] = np.matmul(Strctr.RM, L_vec) / delta_p
             if BigClass.Variabs.R_update in ['deltaR_propto_dp_nonlin', 'deltaR_propto_dp_nonlin_decay']:  # normalize C as well
                 C_vec_norm = C_vec[0] / np.linalg.norm(C_vec[0])
-                update_vec: NDArray[np.float_] = - self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec_norm)
+                update_vec: NDArray[np.float_] = - BigClass.Sprvsr.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec_norm)
             else:
-                update_vec = - self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec[0])
-        elif BigClass.Variabs.training_scheme == 'Adaline':
-            if BigClass.Variabs.Ninter > 0:
+                update_vec = - BigClass.Sprvsr.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec[0])
+        elif BigClass.Sprvsr.training_scheme == 'Adaline':
+            if BigClass.Strctr.Ninter > 0:
                 Strctr = BigClass.Strctr_fict
             else:
                 Strctr = BigClass.Strctr
@@ -773,11 +756,11 @@ class Network_State:
             self.grad_loss_vec = grad_loss_vec
             grad_loss_vec_norm = grad_loss_vec / np.linalg.norm(grad_loss_vec)
             self.grad_loss_vec_norm = grad_loss_vec_norm
-            if BigClass.Variabs.normalize_loss:  # normalize C as well
-                update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm)
+            if BigClass.Sprvsr.normalize_loss:  # normalize C as well
+                update_vec = - BigClass.Sprvsr.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm)
             else:
-                update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
-            if BigClass.Variabs.Ninter > 0:  # enlarge update_vec again for complying with Strctr
+                update_vec = - BigClass.Sprvsr.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
+            if BigClass.Strctr.Ninter > 0:  # enlarge update_vec again for complying with Strctr
                 # Insert zeros at each index, shifting elements to the right
                 for idx in BigClass.Strctr.inter_nodes_arr:
                     update_vec = np.insert(update_vec, idx, 0)
@@ -791,25 +774,25 @@ class Network_State:
         self.Power_norm_in_t.append(self.Power_norm)
 
         # print
-        if not BigClass.Variabs.supress_prints:
+        if not BigClass.Sprvsr.supress_prints:
             print('Power dissipation normalized', self.Power_norm)
 
     def calculate_accuracy_fullDataset(self, BigClass: "Big_Class") -> None:
-        self.accuracy_vec: NDArray[np.int_] = zeros(np.shape(BigClass.Variabs.dataset)[0], dtype=np.int_)
-        for i, datapoint in enumerate(BigClass.Variabs.dataset):
-            self.draw_p_in_and_desired(BigClass.Variabs, i, modality='measure_for_accuracy')
+        self.accuracy_vec: NDArray[np.int_] = zeros(np.shape(BigClass.Sprvsr.dataset)[0], dtype=np.int_)
+        for i, datapoint in enumerate(BigClass.Sprvsr.dataset):
+            self.draw_p_in_and_desired(BigClass.Sprvsr, i, modality='measure_for_accuracy')
             self.solve_flow_given_modality(BigClass, "measure_for_accuracy")  # measure and don't change resistances
             self.accuracy_vec[i] = statistics.calculate_accuracy_1sample(self.output, self.targets_mat,
-                                                                         BigClass.Variabs.targets[i])
+                                                                         BigClass.Sprvsr.targets[i])
         self.accuracy = np.mean(self.accuracy_vec)
 
     def calculate_accuracy_testset(self, BigClass: "Big_Class") -> None:
-        self.accuracy_vec = zeros(np.shape(BigClass.Variabs.X_test)[0], dtype=np.int_)
-        for i, datapoint in enumerate(BigClass.Variabs.X_test):
-            self.draw_p_in_and_desired(BigClass.Variabs, i, modality='measure_for_accuracy')
+        self.accuracy_vec = zeros(np.shape(BigClass.Sprvsr.X_test)[0], dtype=np.int_)
+        for i, datapoint in enumerate(BigClass.Sprvsr.X_test):
+            self.draw_p_in_and_desired(BigClass.Sprvsr, i, modality='measure_for_accuracy')
             self.solve_flow_given_modality(BigClass, "measure_for_accuracy")  # measure and don't change resistances
             self.accuracy_vec[i] = statistics.calculate_accuracy_1sample(self.output, self.targets_mat,
-                                                                         BigClass.Variabs.y_test[i])
+                                                                         BigClass.Sprvsr.y_test[i])
         self.accuracy = np.mean(self.accuracy_vec)
 
     def measure_flow(self, BigClass: "Big_Class") -> None:
