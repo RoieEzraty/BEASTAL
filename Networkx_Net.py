@@ -2,8 +2,9 @@ from __future__ import annotations
 import networkx as nx
 import numpy as np
 
-from typing import Tuple, List, Dict, Any
-from numpy import array, zeros
+from collections.abc import Sequence
+from typing import Any, Dict, Tuple
+from numpy import array
 from typing import TYPE_CHECKING
 from numpy.typing import NDArray
 
@@ -40,7 +41,7 @@ class Networkx_Net:
         NET - networkx network containing just the edges from EIEJ_plots
         """
         NET: nx.DiGraph = nx.DiGraph()  # initiate graph object
-        NET.add_edges_from(BigClass.Strctr.EIEJ_plots)  # add edges
+        NET.add_edges_from((int(source), int(target)) for source, target in BigClass.Strctr.EIEJ_plots)
         self.NET: nx.DiGraph = NET
 
     def build_pos_lattice(self, BigClass: "Big_Class", plot: bool = False,
@@ -76,11 +77,11 @@ class Networkx_Net:
 
                     # Assign positions for the 5 nodes
                     # (left, lower, right, upper, middle).
-                    pos_lattice[start_index + 0] = array([-(self.scale / 2 - self.squish) + x_offset, 0 + y_offset])
-                    pos_lattice[start_index + 1] = array([0 + x_offset, -(self.scale / 2 - self.squish) + y_offset])
-                    pos_lattice[start_index + 2] = array([(self.scale / 2 - self.squish) + x_offset, 0 + y_offset])
-                    pos_lattice[start_index + 3] = array([0 + x_offset, (self.scale / 2 - self.squish) + y_offset])
-                    pos_lattice[start_index + 4] = array([0 + x_offset, 0 + y_offset])
+                    pos_lattice[start_index + 0] = (-(self.scale / 2 - self.squish) + x_offset, 0 + y_offset)
+                    pos_lattice[start_index + 1] = (0 + x_offset, -(self.scale / 2 - self.squish) + y_offset)
+                    pos_lattice[start_index + 2] = ((self.scale / 2 - self.squish) + x_offset, 0 + y_offset)
+                    pos_lattice[start_index + 3] = (0 + x_offset, (self.scale / 2 - self.squish) + y_offset)
+                    pos_lattice[start_index + 4] = (0 + x_offset, 0 + y_offset)
         elif BigClass.Strctr.net_type == 'FC':
             pos_lattice = {}
 
@@ -90,32 +91,37 @@ class Networkx_Net:
             n_in = len(BigClass.Strctr.input_nodes_arr)
             for i, node in enumerate(BigClass.Strctr.input_nodes_arr):
                 y = i - (n_in - 1) / 2  # Center the input layer around x=0
-                pos_lattice[node] = (k, y)
+                pos_lattice[int(node)] = (float(k), float(y))
             k += 1
 
             n_inter = len(BigClass.Strctr.inter_nodes_arr)
             for i, node in enumerate(BigClass.Strctr.inter_nodes_arr):
                 y = i - (n_inter - 1) / 2  # Center the input layer around x=0
-                pos_lattice[node] = (k, y)
+                pos_lattice[int(node)] = (float(k), float(y))
             k += 1
 
             # Output layer: x = 1
             n_out = len(BigClass.Strctr.output_nodes_arr)
             for i, node in enumerate(BigClass.Strctr.output_nodes_arr):
                 y = i - (n_out - 1) / 2  # Center the output layer around x=0
-                pos_lattice[node] = (k, y)
+                pos_lattice[int(node)] = (float(k), float(y))
             k += 1
 
             # Ground node: x = 2, centered
-            pos_lattice[BigClass.Strctr.NN-1] = (k, 0)
+            pos_lattice[BigClass.Strctr.NN-1] = (float(k), 0.0)
 
         else:
-            pos_lattice = nx.spring_layout(self.NET, k=1.0, iterations=20)
+            spring_positions = nx.spring_layout(self.NET, k=1.0, iterations=20)
+            pos_lattice = {
+                node: (float(position[0]), float(position[1]))
+                for node, position in spring_positions.items()
+            }
         self.pos_lattice = pos_lattice
         if plot:
             plot_funcs.plotNetStructure(self.NET, BigClass, pos_lattice, node_labels=node_labels)
 
-    def save_R_reordered(self, R_vec: NDArray[np.float_], EIEJ_plots: list[Tuple]) -> None:
+    def save_R_reordered(self, R_vec: NDArray[np.float_],
+                         EIEJ_plots: Sequence[tuple[int, int]]) -> None:
 
         # Create a mapping from edges to their index in Strctr.EIEJ_plots
         edge_to_index = {edge: idx for idx, edge in enumerate(EIEJ_plots)}
@@ -123,7 +129,8 @@ class Networkx_Net:
         # Reorder R_in_t according to NET.NET.edges
         self.R_reordered = array([R_vec[edge_to_index[edge]] for edge in self.NET.edges])
 
-    def save_u_reordered(self, u: NDArray[np.float_], EIEJ_plots: list[Tuple]) -> None:
+    def save_u_reordered(self, u: NDArray[np.float_],
+                         EIEJ_plots: Sequence[tuple[int, int]]) -> None:
 
         # Create a mapping from edges to their index in Strctr.EIEJ_plots
         edge_to_index = {edge: idx for idx, edge in enumerate(EIEJ_plots)}

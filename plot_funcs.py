@@ -7,7 +7,7 @@ import matplotlib.image as mpimg
 
 import copy
 
-from typing import Tuple, List, Dict, Any
+from typing import Tuple, List, Dict, Any, Optional, cast
 from typing import TYPE_CHECKING
 from numpy.typing import NDArray
 from brokenaxes import brokenaxes
@@ -16,7 +16,11 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.lines import Line2D
 from matplotlib.colors import LogNorm
 
-import statistics, colors
+import colors
+import statistical_analysis as statistics
+
+if TYPE_CHECKING:
+    from Big_Class import Big_Class
 
 colors_lst, red, cmap = colors.color_scheme()
 
@@ -37,7 +41,7 @@ plt.rcParams['legend.loc'] = 'best'
 # # The functions
 
 def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_network: Optional[bool] = False,
-                    node_labels: bool = False) -> None:
+                    node_labels: bool = False, save: bool = False, name: Optional[str] = None) -> None:
     """
     one plot with 4 subfigures of
     1) mean absolute value of loss in time
@@ -49,7 +53,9 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     BigClass        - Class instance containing User_Variables, Network_Structure, etc.
     movmean_loss    - boolean of whether to smoothen loss with moving mean
     include_network - boolean of whether to plot network
-    node_label      - boolean of whether to plot node number
+    node_labels     - boolean of whether to plot node number
+    save            - boolean of whether to save the plot
+    name            - optional name for the saved plot
 
     outputs:
     1 matplotlib plot
@@ -75,6 +81,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     else:
         legend2 += [rf'$x_{{{i+1}}}\,\mathrm{{update}}$' for i in range(Nin)]
 
+    ax4: Optional[plt.Axes] = None
     if include_network:
         fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(17, 3))
     else:
@@ -112,7 +119,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
 
     # Network structure
     if include_network:
-        if BigClass.NET.NET is not None:
+        if BigClass.NET.NET is not None and ax4 is not None:
             plotNetStructure(NET=BigClass.NET.NET,
                              BigClass=BigClass,
                              pos_lattice=BigClass.NET.pos_lattice,
@@ -120,10 +127,18 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
                              R_reordered=BigClass.NET.R_reordered,
                              u_reordered=BigClass.NET.u_reordered,
                              p_reordered=BigClass.NET.p_reordered,
-                             ax=ax4  # Pass the subplot axis
+                             ax=ax4,  # Pass the subplot axis
+                             show=False
                              )
         else:
             print('no NET assigned in input')
+
+    if save:
+        if name is not None:
+            fig_name = f"{name}.png"
+        else:
+            fig_name = "importants.png"
+        fig.savefig(fig_name, dpi=300, bbox_inches='tight')
     plt.show()
 
 
@@ -131,7 +146,8 @@ def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
                      pos_lattice: Dict[Any, Tuple[float, float]], node_labels: bool = False,
                      R_reordered: NDArray[np.float_] = np.array([]),
                      u_reordered: NDArray[np.float_] = np.array([]),
-                     p_reordered: NDArray[np.float_] = np.array([]), ax: Optional[plt.Axes] = None) -> None:
+                     p_reordered: NDArray[np.float_] = np.array([]), ax: Optional[plt.Axes] = None,
+                     show: bool = True) -> None:
     """
     Plots the structure (nodes and edges) of networkx NET
     Arrows represent flow direction, arrow width = flow magnitude, color = R (low-cyan, high-purple)
@@ -144,6 +160,8 @@ def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
     R_reordered - array of values used to determine edge colors
     u_reordered - array of values used to determine edge widths and flow direction
     p_reordered - array of values used to determine node colors
+    ax          - optional axes on which to draw the network
+    show        - boolean of whether to display the plot immediately
 
     output:
     matplotlib plot of network structure
@@ -182,7 +200,8 @@ def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
                 node_colors.append("gray")  # Optional: default color for unclassified nodes
 
     # Create or use the specified axis
-    ax = ax or plt.gca()
+    if ax is None:
+        ax = plt.gca()
 
     # # Draw edges with arrows
     # for (u, v), color, width, direction in zip(NET.edges, edge_colors, edge_widths, edge_directions):
@@ -221,14 +240,15 @@ def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
     # draw_arrow(ax5, pos_lattice_both, 2, 3, color=colors_lst[0], head_width=arrow_head_w)  # out to ground
     nx.draw_networkx(NET, pos=pos_lattice, edge_color=edge_colors,
                      node_color=node_colors, with_labels=False, arrows=True, font_color='white',
-                     font_size=14, width=2, node_size=400)
+                     font_size=14, width=2, node_size=400, ax=ax)
 
     # Draw labels (if enabled)
     if node_labels:
-        nx.draw_networkx_labels(NET, pos=pos_lattice, font_size=16, font_color='white')
+        nx.draw_networkx_labels(NET, pos=pos_lattice, font_size=16, font_color='white', ax=ax)
 
     # Show the plot
-    plt.show()
+    if show:
+        plt.show()
     print('NET is ready')
 
 
@@ -409,11 +429,14 @@ def loss_afo_in_out(loss_mat_lin: np.ndarray, loss_mat_nonlin: np.ndarray, saves
 
     log_scale = True
     # log_scale = False
+    vmin: Optional[float] = None
+    vmax: Optional[float] = None
     if log_scale:
         loss_max = 1
         loss_min = 5e-3
         # Set color normalization using logarithmic scale
-        norm = LogNorm(vmin=loss_min, vmax=loss_max)  # Adjust vmin/vmax if needed
+        log_norm_factory: Any = LogNorm
+        norm = log_norm_factory(vmin=loss_min, vmax=loss_max)
     else:
         vmin = 0
         vmax = 0.1
@@ -510,7 +533,8 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
     mean_accuracy[0] = 1/3
 
     # plot accuracy a.f.o time
-    fig, ax = plt.subplots()
+    fig, raw_ax = plt.subplots()
+    ax = cast(plt.Axes, raw_ax)
 
     # Add vertical lines at times where t finished cycle through dataset and targets were re-calculated
     for t in range(int(t_final)):
@@ -521,12 +545,13 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
     opacity_eps = 1.0 if is_eps else opacity
 
     # Fill confidence bounds FIRST so it's behind the line
-    ax.fill_between(t_for_accuracy_smoothed,
-                    mean_accuracy - std,
-                    mean_accuracy + std,
-                    color=colors_lst[1],
-                    alpha=opacity_eps,
-                    zorder=1)
+    plot_ax: Any = ax  # Work around incomplete array overloads in the installed Matplotlib stubs.
+    plot_ax.fill_between(t_for_accuracy_smoothed,
+                         mean_accuracy - std,
+                         mean_accuracy + std,
+                         color=colors_lst[1],
+                         alpha=opacity_eps,
+                         zorder=1)
 
     # Then plot the mean accuracy line on top
     ax.plot(t_for_accuracy_smoothed,
@@ -588,6 +613,22 @@ def plot_accuracy_1_material(t_final: np.int_, t_for_accuracy: NDArray[np.int_],
         plt.show()
 
 
+def plot_accuracy(t_final: int, t_for_accuracy: NDArray[np.int_],
+                  accuracy_in_t: NDArray[np.float_], dataset_size: int) -> None:
+    """Plot classification accuracy and mark completed passes through the dataset."""
+    fig, raw_ax = plt.subplots()
+    ax = cast(plt.Axes, raw_ax)
+    ax.plot(t_for_accuracy, accuracy_in_t, color=colors_lst[0], marker='.')
+    for t in range(dataset_size, t_final, dataset_size):
+        ax.axvline(t, color=red, linestyle='--', linewidth=1, alpha=0.3)
+    ax.set_xlabel(r'$t$')
+    ax.set_ylabel('Test accuracy')
+    ax.set_ylim(0.0, 1.0)
+    set_thicker_spines(ax)
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_final_accuracy_bar_chart(ax: plt.Axes,
                                   accuracy_in_t_R_propto_deltap: np.ndarray,
                                   accuracy_in_t_deltaR_propto_deltap_nonlin: np.ndarray,
@@ -623,16 +664,17 @@ def plot_final_accuracy_bar_chart(ax: plt.Axes,
     ax.bar(x, means, yerr=stds, capsize=5, color=colors, edgecolor='black', linewidth=1.5, alpha=0.9)
     # ax.set_xticks(x)
     # ax.set_xticklabels(legend, rotation=20, fontsize=14)
-    ax.set_xticks(x)
-    ax.set_xticklabels([])  # Hide default labels
+    typed_ax: Any = ax  # Matplotlib's installed stubs model these methods as descriptors.
+    typed_ax.set_xticks(x)
+    typed_ax.set_xticklabels([])  # Hide default labels
 
     # Add rotated labels inside the bars
     for i, label in enumerate(legend):
         ax.text(x[i], 0.35, label, ha='center', va='bottom', rotation=90, fontsize=13)
     ax.set_ylabel("Final accuracy", fontsize=14)
     ax.set_ylim([0.33, 1])
-    ax.set_yticks(np.arange(0.3, 1.01, 0.2))
-    ax.grid(axis='y', linestyle='--', linewidth=1.5, alpha=0.4)
+    typed_ax.set_yticks(np.arange(0.3, 1.01, 0.2))
+    typed_ax.grid(axis='y', linestyle='--', linewidth=1.5, alpha=0.4)
 
     set_thicker_spines(ax, linewidth=1.0)
 
@@ -965,7 +1007,7 @@ def cos_sim_lin_nonlin(cos_mat_lin: np.ndarray, cos_mat_nonlin: np.ndarray, save
 
 
 # Apply thicker spines globally
-def set_thicker_spines(ax, linewidth=2):
+def set_thicker_spines(ax: plt.Axes, linewidth: float = 2.0) -> None:
     for spine in ax.spines.values():
         spine.set_linewidth(linewidth)
 

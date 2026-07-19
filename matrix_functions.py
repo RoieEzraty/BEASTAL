@@ -125,7 +125,7 @@ def build_input_output_and_ground(Nin: int, Nout: int, in_nodes: NDArray[np.int_
     return inInterOutGround_tuple
 
 
-def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_], List[NDArray[np.int_]],
+def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_], List[tuple[int, int]],
                                                           NDArray[np.int_], int, int]:
     """
     Builds incidence matrix DM as np.array [NEdges, NNodes] for 1 single FC network, w/out ground
@@ -144,8 +144,7 @@ def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDAr
 
     NN: int = len(Strctr.input_nodes_arr) + len(Strctr.extraInput_nodes_arr) + len(Strctr.inter_nodes_arr) + \
         len(Strctr.output_nodes_arr) + len(Strctr.extraOutput_nodes_arr) + len(Strctr.ground_nodes_arr)
-    if len(Strctr.ground_nodes_arr) != 0:
-        ground_node: int = copy.copy(NN) - 1  # ground nodes is last one.
+    ground_node = int(Strctr.ground_nodes_arr[-1]) if len(Strctr.ground_nodes_arr) else -1
     EIlst: List[int] = []
     EJlst: List[int] = []
 
@@ -228,7 +227,7 @@ def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDAr
     NE: int = len(EI)
 
     # for plots
-    EIEJ_plots: List = [(EI[i], EJ[i]) for i in range(len(EI))]
+    EIEJ_plots = [(int(EI[i]), int(EJ[i])) for i in range(len(EI))]
 
     DM: NDArray[np.int_] = zeros([NE, NN], dtype=np.int_)  # Incidence matrix
     for i in range(NE):
@@ -239,7 +238,7 @@ def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDAr
 
 
 def build_incidence_partialInter(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_],
-                                                                       List[NDArray[np.int_]], NDArray[np.int_],
+                                                                       List[tuple[int, int]], NDArray[np.int_],
                                                                        int, int]:
     """
     Builds incidence matrix DM as np.array [NEdges, NNodes]
@@ -288,7 +287,7 @@ def build_incidence_partialInter(Strctr: "Network_Structure") -> Tuple[NDArray[n
     NE: int = len(EI)
 
     # for plots
-    EIEJ_plots: List = [(EI[i], EJ[i]) for i in range(len(EI))]
+    EIEJ_plots = [(int(EI[i]), int(EJ[i])) for i in range(len(EI))]
 
     DM: NDArray[np.int_] = zeros([NE, NN], dtype=np.int_)  # Incidence matrix
     for i in range(NE):
@@ -299,7 +298,7 @@ def build_incidence_partialInter(Strctr: "Network_Structure") -> Tuple[NDArray[n
 
 
 def build_incidence_square(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_],
-                                                                 List[NDArray[np.int_]], NDArray[np.int_], int, int]:
+                                                                 List[tuple[int, int]], NDArray[np.int_], int, int]:
     """
     Builds incidence matrix DM as np.array [NEdges, NNodes] for a square network
     its meaning is 1 at input node and -1 at outpus for every row which resembles one edge.
@@ -329,7 +328,7 @@ def build_incidence_square(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_
     NE: int = len(EI)
 
     # for plots
-    EIEJ_plots: List = [(EI[i], EJ[i]) for i in range(len(EI))]
+    EIEJ_plots = [(int(EI[i]), int(EJ[i])) for i in range(len(EI))]
 
     DM: NDArray[np.int_] = zeros([NE, NN], dtype=np.int_)  # Incidence matrix
     for i in range(NE):
@@ -340,7 +339,7 @@ def build_incidence_square(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_
 
 
 def build_incidence_beads(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_],
-                                                                List[NDArray[np.int_]], NDArray[np.int_], int, int]:
+                                                                List[tuple[int, int]], NDArray[np.int_], int, int]:
     """
     Builds incidence matrix DM as np.array [NEdges, NNodes] for a square network
     its meaning is 1 at input node and -1 at outpus for every row which resembles one edge.
@@ -386,7 +385,7 @@ def build_incidence_beads(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_]
     NE: int = len(EI)
 
     # for plots
-    EIEJ_plots: List = [(EI[i], EJ[i]) for i in range(len(EI))]
+    EIEJ_plots = [(int(EI[i]), int(EJ[i])) for i in range(len(EI))]
 
     print('EI', EI)
     print('EJ', EJ)
@@ -645,6 +644,8 @@ def ChangeRFromFlow_singleCell(u, p_thresh, R, R_backg, R_max, R_min, R_change_s
         # all indices where u enters the cell at velocity greater than threshold to move bead
         u_in_ind = np.where(u > u_thresh)[0]
         u_out_ind = np.where(u == min(u.T))[0]  # indices if minimal flow, possibly exiting the cell
+    else:
+        raise ValueError(f"Unknown bead resistance-change scheme: {R_change_scheme}")
 
     R_nxt = copy.copy(R_backg)
     # no flow exits the cell, it is a ground, don't put bead inside, else

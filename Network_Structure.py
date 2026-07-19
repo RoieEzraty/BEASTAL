@@ -79,6 +79,15 @@ class Network_Structure:
         elif type == 'beads':
             print('building network for beads')
             self.EI, self.EJ, self.EIEJ_plots, self.DM, self.NE, self.NN = matrix_functions.build_incidence_beads(self)
+        else:
+            raise ValueError(f"Unknown network type: {type}")
+
+        output_at_start = np.isin(self.EI, self.output_nodes_arr)
+        output_at_end = np.isin(self.EJ, self.output_nodes_arr)
+        self.output_edges: NDArray[np.int_] = np.flatnonzero(output_at_start | output_at_end)
+        self.output_edge_directions: NDArray[np.int_] = np.where(
+            output_at_start[self.output_edges], 1, -1
+        ).astype(np.int_)
 
     def build_inverse_incidence(self) -> None:
         self.DM_dagger: NDArray[np.float_] = matrix_functions.inverse_incidence(self.DM)

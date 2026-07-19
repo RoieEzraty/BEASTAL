@@ -1,13 +1,18 @@
 from __future__ import annotations
 import numpy as np
 
-from typing import Tuple, List, Union, Optional
+from typing import Optional, Tuple
 from numpy.typing import NDArray
 from numpy import array
-from typing import TYPE_CHECKING, Literal
-from typing_extensions import Annotated
+from typing_extensions import Annotated, TypeAlias
 
 import matrix_functions
+
+
+FloatArray: TypeAlias = NDArray[np.float_]
+IntArray: TypeAlias = NDArray[np.int_]
+NodeArrays: TypeAlias = Tuple[IntArray, ...]
+NodeDataArrays: TypeAlias = Tuple[FloatArray, ...]
 
 
 # ===================================================
@@ -17,8 +22,8 @@ import matrix_functions
 
 def loss_fn_2samples(output1: NDArray[np.float_], output2: NDArray[np.float_],
                      desired1: NDArray[np.float_], desired2: NDArray[np.float_],
-                     Power1: Optional[np.float_] = None, Power2: Optional[np.float_] = None,
-                     lam: Optional[np.float_] = None) -> NDArray[np.float_]:
+                     Power1: Optional[float] = None, Power2: Optional[float] = None,
+                     lam: Optional[float] = None) -> NDArray[np.float_]:
     """
     loss functions for regression task out=M*in using two sampled input pressures
 
@@ -49,8 +54,8 @@ def loss_fn_2samples(output1: NDArray[np.float_], output2: NDArray[np.float_],
 
 
 def loss_fn_1sample(output: np.ndarray, desired: np.ndarray,
-                    Power: Optional[np.float_] = None,
-                    lam: Optional[np.float_] = None) -> np.ndarray:
+                    Power: Optional[float] = None,
+                    lam: Optional[float] = None) -> np.ndarray:
     """
     loss functions for regression task out=M*in using a single drawn input pressure
 
@@ -76,20 +81,8 @@ def loss_fn_1sample(output: np.ndarray, desired: np.ndarray,
     return loss
 
 
-def setup_constraints_given_pin(nodes_tuple: Union[Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_]],
-                                                   Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                                         NDArray[np.int_]],
-                                                   Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                                         NDArray[np.int_], NDArray[np.int_]],
-                                                   Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                                         NDArray[np.int_], NDArray[np.int_], NDArray[np.int_]]],
-                                nodeData_tuple: Union[Tuple[NDArray[np.float_], NDArray[np.float_]],
-                                                      Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]],
-                                                      Tuple[NDArray[np.float_], NDArray[np.float_],
-                                                            NDArray[np.float_], NDArray[np.float_]],
-                                                      Tuple[NDArray[np.float_], NDArray[np.float_],
-                                                            NDArray[np.float_], NDArray[np.float_],
-                                                            NDArray[np.float_]]],
+def setup_constraints_given_pin(nodes_tuple: NodeArrays,
+                                nodeData_tuple: NodeDataArrays,
                                 NN: int,
                                 EI: NDArray[np.int_],
                                 EJ: NDArray[np.int_]) -> Tuple[NDArray[np.float_], NDArray[np.float_],
@@ -135,20 +128,8 @@ def setup_constraints_given_pin(nodes_tuple: Union[Tuple[NDArray[np.int_], NDArr
     return Cstr_full, Cstr, f
 
 
-def Constraints_nodes(nodes_tuple: Union[Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_]],
-                                         Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                               NDArray[np.int_]],
-                                         Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                               NDArray[np.int_], NDArray[np.int_]],
-                                         Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                               NDArray[np.int_], NDArray[np.int_], NDArray[np.int_]]],
-                      nodeData_tuple: Union[Tuple[NDArray[np.float_], NDArray[np.float_]],
-                                            Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]],
-                                            Tuple[NDArray[np.float_], NDArray[np.float_],
-                                                  NDArray[np.float_], NDArray[np.float_]],
-                                            Tuple[NDArray[np.float_], NDArray[np.float_],
-                                                  NDArray[np.float_], NDArray[np.float_],
-                                                  NDArray[np.float_]]],) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def Constraints_nodes(nodes_tuple: NodeArrays,
+                      nodeData_tuple: NodeDataArrays) -> tuple[FloatArray, IntArray, IntArray]:
     """
     Assemble node constraints and their pressure values for solving flow in a network.
 
@@ -173,6 +154,9 @@ def Constraints_nodes(nodes_tuple: Union[Tuple[NDArray[np.int_], NDArray[np.int_
     GroundNodes : np.ndarray
         Indices of ground nodes (outlets) for pressure reference.
     """
+    if len(nodes_tuple) < 3 or len(nodeData_tuple) < 2:
+        raise ValueError("Node constraints require at least input, extra-input, and ground arrays")
+
     # Required core inputs
     InNodes, extraInNodes, GroundNodes = nodes_tuple[:3]
     InNodeData, extraInNodeData = nodeData_tuple[:2]

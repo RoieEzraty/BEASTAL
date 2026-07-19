@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
-from sklearn.utils import shuffle
+from sklearn.utils import Bunch, shuffle
 
 import functions
 from config import ExperimentConfig
@@ -47,6 +47,13 @@ class Supervisor:
         self.alpha_scale_nonlin: float = sprvsr.alpha_scale_nonlin
         self.loss_fn = functions.loss_fn_2samples if self.use_p_tag else functions.loss_fn_1sample
         self.lam: float = -80.0**-1
+        self.dataset: NDArray[np.float_]
+        self.targets: NDArray[np.float_]
+        self.X_train: NDArray[np.float_]
+        self.X_test: NDArray[np.float_]
+        self.y_train: NDArray[np.float_]
+        self.y_test: NDArray[np.float_]
+        self.means: NDArray[np.float_]
 
         self.assign_alpha(sprvsr.alpha, Variabs)
         self.assign_M(config, Strctr)
@@ -88,14 +95,14 @@ class Supervisor:
         if self.task_type == "Regression":
             np.random.seed(random_state)
             if Variabs.R_update == "beads":
-                self.dataset: NDArray[np.float_] = np.ones((self.iterations, Strctr.Nin))
+                self.dataset = np.ones((self.iterations, Strctr.Nin))
             elif self.dataset_type == "alternating ones":
                 self.dataset = np.tile(
                     np.eye(Strctr.Nin), (int(self.iterations / Strctr.Nin), 1)
                 )
             else:
                 self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations, Strctr.Nin))
-            self.targets: NDArray[np.float_] = self.dataset @ self.M.T
+            self.targets = self.dataset @ self.M.T
             self.X_train = copy.copy(self.dataset)
             self.y_train = copy.copy(self.targets)
             self.X_test = copy.copy(self.dataset)
@@ -105,21 +112,27 @@ class Supervisor:
         if self.task_type != "Iris_classification":
             raise ValueError(f"Unknown task type: {self.task_type}")
 
-        iris = load_iris()
+        iris = cast(Bunch, load_iris())
+        iris_data = np.asarray(iris.data, dtype=float)
+        iris_target = np.asarray(iris.target, dtype=int)
         scaler = MinMaxScaler(feature_range=(0, 5))
-        self.dataset = scaler.fit_transform(iris["data"])
+        self.dataset = scaler.fit_transform(iris_data)
         encoder = OneHotEncoder(sparse_output=False, categories="auto")
-        self.targets = encoder.fit_transform(iris["target"].reshape(-1, 1))
+        self.targets = encoder.fit_transform(iris_target.reshape(-1, 1))
         if train_size:
-            self.X_train, self.X_test, self.y_train, self.y_test = train_test_split(
+            split_data = train_test_split(
                 self.dataset, self.targets, train_size=train_size, random_state=random_state,
-                stratify=iris["target"]
+                stratify=iris_target
             )
+            self.X_train = np.asarray(split_data[0], dtype=float)
+            self.X_test = np.asarray(split_data[1], dtype=float)
+            self.y_train = np.asarray(split_data[2], dtype=float)
+            self.y_test = np.asarray(split_data[3], dtype=float)
         else:
-            self.X_train = shuffle(copy.copy(self.dataset), random_state=random_state)
-            self.X_test = shuffle(copy.copy(self.dataset), random_state=random_state)
-            self.y_train = shuffle(copy.copy(self.targets), random_state=random_state)
-            self.y_test = shuffle(copy.copy(self.targets), random_state=random_state)
+            self.X_train = np.asarray(shuffle(copy.copy(self.dataset), random_state=random_state), dtype=float)
+            self.X_test = np.asarray(shuffle(copy.copy(self.dataset), random_state=random_state), dtype=float)
+            self.y_train = np.asarray(shuffle(copy.copy(self.targets), random_state=random_state), dtype=float)
+            self.y_test = np.asarray(shuffle(copy.copy(self.targets), random_state=random_state), dtype=float)
         y_train_decoded = np.argmax(self.y_train, axis=1)
         self.means = np.array([
             np.mean(self.X_train[y_train_decoded == class_index], axis=0)
@@ -129,7 +142,7 @@ class Supervisor:
     def create_noise_for_extras(self, Strctr: "Network_Structure",
                                 Variabs: "User_Variables") -> None:
         """Create boundary-condition noise arrays for non-task nodes."""
-        dataset_size = np.shape(self.X_train)[0]
+        dataset_size = self.X_train.shape[0]
 
         def uniform_noise(size: tuple[int, int]) -> NDArray[np.float_]:
             return (np.random.uniform(0.0, 1.0, size=size) - 0.5) * Variabs.bc_noise

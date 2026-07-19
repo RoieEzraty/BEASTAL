@@ -1,10 +1,8 @@
 from __future__ import annotations
-import numpy as np
-
-from matplotlib.colors import LinearSegmentedColormap, Colormap
+from matplotlib.colors import Colormap
 from typing import Tuple
 
-import plot_functions
+import colors
 
 # ===================================================
 # Class - Color scheme
@@ -31,15 +29,4 @@ class Color_Scheme:
         custom_cmap - matplotlibcolors.Colormap of 256 colors on a scale using "colors"
         """
 
-        # Define the custom color scheme as a colormap
-
-        colors_lst = ['#4500E0', '#54CCE0', '#CD23E1', '#9EE1B1', '#E04F68']
-        red = '#E04F68'
-
-        # Create the custom colormap for the gradient
-        custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', [colors_lst[1], colors_lst[2], colors_lst[0]],
-                                                        N=256)
-
-        if show:
-            plot_functions.plot_colors(custom_cmap, red)
-        return colors_lst, red, custom_cmap
+        return colors.color_scheme(show)

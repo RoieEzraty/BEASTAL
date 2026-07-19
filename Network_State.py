@@ -7,7 +7,8 @@ from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
-import functions, solve, statistics, matrix_functions
+import functions, solve, matrix_functions
+import statistical_analysis as statistics
 from config import ExperimentConfig
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ class Network_State:
         self.extraInput_in_t: List[NDArray[np.float_]] = []  # pressure at additional inputs in time
         self.inter_in_t: List[NDArray[np.float_]] = []  # pressure at intermediate nodes (not input/output) in time
         self.output_in_t: List[NDArray[np.float_]] = []  # pressure at outputs in time
+        self.p_in_t: List[NDArray[np.float_]] = []  # measured pressures on all physical nodes in time
         self.extraOutput_in_t: List[NDArray[np.float_]] = []  # pressure at additional outputs, loss not calculated
         self.desired_in_t: List[NDArray[np.float_]] = []  # desired output pressure for each sample, input dependent
         # "update" modality
@@ -48,12 +50,12 @@ class Network_State:
         self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
         self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
         self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
-        if BigClass.Variabs.hysteresis:
-            self.hysteresis = 0
+        self.hysteresis: NDArray[np.float_] = np.zeros(Strctr.NE, dtype=float)
         # Loss and Power
         self.loss_in_t: List[NDArray[np.float_]] = []
-        self.loss_scalar_in_t: List[NDArray[np.float_]] = []
-        self.Power_norm_in_t: List[NDArray[np.float_]] = []  # Power dissipation in whole network, normalized by inputs
+        self.loss_scalar_in_t: NDArray[np.float_] = np.array([], dtype=float)
+        self.Power_norm: float = 0.0
+        self.Power_norm_in_t: List[float] = []  # Power dissipation in whole network, normalized by inputs
         self.update_vec_in_t: List[NDArray[np.float_]] = []  # input and output values in update modality, w/out hysteresis
         # Other sizes that make problems sometimes
         self.extraInput: NDArray[np.float_] = copy.copy(self.extraInput_update_in_t[-1])
@@ -213,17 +215,8 @@ class Network_State:
         """
         # Calculate pressure p and flow u
         # Select nodes and pressure data based on modality
-        nodes_tuple: Union[Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_]],
-                           Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_], NDArray[np.int_]],
-                           Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                 NDArray[np.int_]],
-                           Tuple[NDArray[np.int_], NDArray[np.int_], NDArray[np.int_], NDArray[np.int_],
-                                 NDArray[np.int_], NDArray[np.int_]]]
-        nodeData_tuple: Union[Tuple[NDArray[np.float_], NDArray[np.float_]],
-                              Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]],
-                              Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]],
-                              Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_], NDArray[np.float_],
-                                    NDArray[np.float_]]]
+        nodes_tuple: functions.NodeArrays
+        nodeData_tuple: functions.NodeDataArrays
         if modality in {'measure', 'measure_for_mean', 'measure_for_accuracy'}:
             if noise_to_extra:
                 nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
@@ -244,8 +237,8 @@ class Network_State:
                               self.output_update_in_t[-1], self.extraOutput_update_in_t[-1])
 
             if inters:  # add inter nodes if needed
-                nodes_tuple += tuple([BigClass.Strctr.inter_nodes_arr])
-                nodeData_tuple += tuple([self.inter_update_in_t[-1]])
+                nodes_tuple += (BigClass.Strctr.inter_nodes_arr,)
+                nodeData_tuple += (self.inter_update_in_t[-1],)
         else:
             raise ValueError(f"Unknown modality: {modality}")
 
@@ -274,6 +267,9 @@ class Network_State:
 
             if modality == 'measure':  # Only save in time if measuring during training
                 self.output_in_t.append(self.output)
+                self.p_in_t.append(copy.copy(
+                    self.p[:BigClass.Strctr.NN].ravel()
+                ))
                 self.extraOutput_in_t.append(self.extraOutput)
                 self.inter_in_t.append(self.inter)
 
@@ -523,7 +519,7 @@ class Network_State:
         if not BigClass.Sprvsr.supress_prints:
             print('extraOutput_update_nxt', self.extraOutput_update_nxt)
 
-    def update_Rs(self, BigClass: "Big_Class", delta_K=[]) -> None:
+    def update_Rs(self, BigClass: "Big_Class", delta_K: Optional[NDArray[np.float_]] = None) -> None:
         """
         update resistances of NE edges
 
@@ -540,10 +536,10 @@ class Network_State:
         # if hysteretic material - update only if new history. if not hysteretic, update for sure
         if BigClass.Variabs.hysteresis:
             BigClass.State.hysteresis += delta_p
-            update_cond: bool = ((BigClass.State.hysteresis > BigClass.Variabs.hyst_thresh) | 
-                                 (BigClass.State.hysteresis < -BigClass.Variabs.hyst_thresh))
+            update_cond = ((BigClass.State.hysteresis > BigClass.Variabs.hyst_thresh) |
+                           (BigClass.State.hysteresis < -BigClass.Variabs.hyst_thresh))
         else:
-            update_cond = np.ones(BigClass.Strctr.NE)
+            update_cond = np.ones(BigClass.Strctr.NE, dtype=bool)
 
         if BigClass.Variabs.R_update in {'deltaR_propto_dp', 'deltaR_propto_dp_decay'}:  # delta_R propto p_in-p_out
             delta_R = BigClass.Variabs.gamma*delta_p * update_cond
@@ -585,16 +581,15 @@ class Network_State:
                     R_nxt = self.R_in_t[-1] + delta_R
             self.R_in_t.append(np.clip(R_nxt, 1e-12, None))
         elif BigClass.Variabs.R_update == 'grad_desc':
-            if delta_K == []:
-                print('error, no delta_K vector supplied')
-            else:
-                K_vec = matrix_functions.K_from_R(self.R_in_t[-1])
-                K_vec_nxt = K_vec + BigClass.Sprvsr.alpha * delta_K
-                R_nxt = 1/K_vec_nxt
-                if BigClass.Variabs.normalize_step:
-                    delta_R = R_nxt - self.R_in_t[-1]
-                    delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
-                    R_nxt = self.R_in_t[-1] + delta_R_norm
+            if delta_K is None:
+                raise ValueError("delta_K must be supplied for gradient-descent resistance updates")
+            K_vec = matrix_functions.K_from_R(self.R_in_t[-1])
+            K_vec_nxt = K_vec + BigClass.Sprvsr.alpha * delta_K
+            R_nxt = 1/K_vec_nxt
+            if BigClass.Variabs.normalize_step:
+                delta_R = R_nxt - self.R_in_t[-1]
+                delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
+                R_nxt = self.R_in_t[-1] + delta_R_norm
             self.R_in_t.append(R_nxt)
         elif BigClass.Variabs.R_update == 'deltaR_propto_Power':  # delta_R propto Power dissipation dp*Q
             self.R_in_t.append(R_vec + BigClass.Variabs.gamma * self.u * delta_p * np.sign(delta_p))
@@ -616,7 +611,8 @@ class Network_State:
 
         self.R_in_t[-1][self.R_in_t[-1] < 10**-12] = 10**-12  # inhibit vanishing R - already accounted for above?
 
-    def dK_grad_desc(self, Strctr: "Network_Structure", dK_step, p_desired, func):
+    def dK_grad_desc(self, Strctr: "Network_Structure", dK_step: float,
+                     p_desired: NDArray[np.float_], func: str) -> NDArray[np.float_]:
         """
         Add desc
 
@@ -642,12 +638,13 @@ class Network_State:
             dK_vec[m] = dK_step
             GD_dcost_vec[m] = self.calc_GD_cost(Strctr, p_desired, K_vec_for_GD=self.K_vec+dK_vec,
                                                 mod='for_grad_desc', func=func)
-            dcost_dK = (GD_dcost_vec - self.GD_cost) / dK_step
-            delta_K = -dcost_dK
+        dcost_dK = (GD_dcost_vec - self.GD_cost) / dK_step
+        delta_K = -dcost_dK
         return delta_K
 
-    def calc_GD_cost(self, Strctr: "Network_Structure", p_desired: NDArray[np.float_], K_vec_for_GD=[],
-                     mod: str = 'measure', func: str = 'MSE') -> np.float_:
+    def calc_GD_cost(self, Strctr: "Network_Structure", p_desired: NDArray[np.float_],
+                     K_vec_for_GD: Optional[NDArray[np.float_]] = None,
+                     mod: str = 'measure', func: str = 'MSE') -> float:
         """
         MSE or mean abs cost between desired and measured network output
         given pressure input, conductivities and constraint matrix
@@ -667,23 +664,21 @@ class Network_State:
         outputs:
         cost: np.float, MSE  or mean abs between maesured and desired outputs
         """
-        if K_vec_for_GD == []:
-            K_vec = self.K_vec
-        else:
-            K_vec = K_vec_for_GD
+        K_vec = self.K_vec if K_vec_for_GD is None else K_vec_for_GD
         p, u = solve.solve_flow(Strctr, self.CstrTuple, K_vec)
         p_out: NDArray[np.float_] = p[Strctr.output_nodes_arr][:, 0]  # p at output nodes, indexed as 1D array
 
-        if p_out.size == p_desired.size:
-            if func == 'MSE':
-                cost: np.float_ = np.mean((p_out - p_desired) ** 2)
-            elif func == 'mean_abs':
-                cost = np.mean(np.abs(p_out - p_desired))
-        else:
-            cost = np.nan
+        if p_out.size != p_desired.size:
             print(f"Incompatible sizes, p_out shape = {p_out.shape}, p_desired shape = {p_desired.shape}")
+            cost = float("nan")
+        elif func == 'MSE':
+            cost = float(np.mean((p_out - p_desired) ** 2))
+        elif func == 'mean_abs':
+            cost = float(np.mean(np.abs(p_out - p_desired)))
+        else:
+            raise ValueError(f"Unknown gradient-descent cost function: {func}")
         if mod == 'measure':  # save in State class only if not part of dK_grad_desc
-            self.GD_cost: np.float_ = cost
+            self.GD_cost: float = cost
         return cost
 
     def calc_loss(self, BigClass: "Big_Class") -> None:
@@ -696,22 +691,25 @@ class Network_State:
         outputs:
         loss: np.ndarray sized [Nout,]
         """
-        if BigClass.Sprvsr.loss_fn == functions.loss_fn_2samples:
+        if BigClass.Sprvsr.use_p_tag:
             if BigClass.Sprvsr.include_Power:
-                self.loss: NDArray[np.float_] = BigClass.Sprvsr.loss_fn(self.output, self.output_in_t[-2],
-                                                                         self.desired, self.desired_in_t[-2],
-                                                                         self.Power_norm, self.Power_norm_in_t[-2],
-                                                                         BigClass.Sprvsr.lam)
+                self.loss: NDArray[np.float_] = functions.loss_fn_2samples(
+                    self.output, self.output_in_t[-2], self.desired, self.desired_in_t[-2],
+                    self.Power_norm, self.Power_norm_in_t[-2], BigClass.Sprvsr.lam
+                )
             else:
-                self.loss: NDArray[np.float_] = BigClass.Sprvsr.loss_fn(self.output, self.output_in_t[-2],
-                                                                         self.desired, self.desired_in_t[-2])
-        elif BigClass.Sprvsr.loss_fn == functions.loss_fn_1sample:
+                self.loss = functions.loss_fn_2samples(
+                    self.output, self.output_in_t[-2], self.desired, self.desired_in_t[-2]
+                )
+        else:
             if BigClass.Sprvsr.include_Power:
                 print('Power_norm', self.Power_norm)
                 print('lam', BigClass.Sprvsr.lam)
-                self.loss = BigClass.Sprvsr.loss_fn(self.output, self.desired, self.Power_norm, BigClass.Sprvsr.lam)
+                self.loss = functions.loss_fn_1sample(
+                    self.output, self.desired, self.Power_norm, BigClass.Sprvsr.lam
+                )
             else:
-                self.loss = BigClass.Sprvsr.loss_fn(self.output, self.desired)
+                self.loss = functions.loss_fn_1sample(self.output, self.desired)
         self.loss_in_t.append(self.loss)
 
     def calc_update_vals_vec(self, BigClass: "Big_Class") -> None:
@@ -764,12 +762,14 @@ class Network_State:
                 # Insert zeros at each index, shifting elements to the right
                 for idx in BigClass.Strctr.inter_nodes_arr:
                     update_vec = np.insert(update_vec, idx, 0)
+        else:
+            raise ValueError(f"Unknown training scheme: {BigClass.Sprvsr.training_scheme}")
             # update_vec[-1] = 0  # neglect ground node
             # grad_loss_vec[-1] = 0
         self.update_vec = update_vec
         self.update_vec_in_t.append(update_vec)
 
-    def calc_Power_norm(self, BigClass: "Big_Class"):
+    def calc_Power_norm(self, BigClass: "Big_Class") -> None:
         self.Power_norm = statistics.power_dissip_norm(self.u, self.R_in_t[-1], self.input_drawn)
         self.Power_norm_in_t.append(self.Power_norm)
 
