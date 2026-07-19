@@ -15,9 +15,9 @@ class StructureConfig:
     net_type: str = "FC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 9
-    Nout: int = 1
-    Ninter: int = 0
+    Nin: int = 3
+    Nout: int = 3
+    Ninter: int = 3
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     add_ground: bool = True
@@ -55,7 +55,7 @@ class SupervisorConfig:
     training_scheme: str = "Adaline"
     iterations: int = 2000
     alpha: float = 0.028
-    alpha_scale_nonlin: float = 50.0
+    alpha_scale_nonlin: float = 42.0
     use_p_tag: bool = False
     stay_sample: int = 1
     normalize_loss: bool = True

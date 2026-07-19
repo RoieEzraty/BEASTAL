@@ -18,7 +18,7 @@ from matplotlib.colors import LogNorm
 
 import statistics, colors
 
-colors_lst, red, custom_cmap = colors.color_scheme()
+colors_lst, red, cmap = colors.color_scheme()
 
 
 # ================================
@@ -60,7 +60,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     t = BigClass.State.t
 
     # Set the custom color cycle globally without cycler
-    colors_lst, red, custom_cmap = colors.color_scheme()
+    colors_lst, red, cmap = colors.color_scheme()
     plt.rcParams['axes.prop_cycle'] = plt.cycler('color', colors_lst)
 
     legend2 = []
@@ -152,7 +152,7 @@ def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
     # Determine edge colors from resistances
     if R_reordered.size > 0:
         R_reordered_normalized = 4 * R_reordered / np.max(R_reordered)  # resistances
-        edge_colors = [BigClass.cmap(value) for value in R_reordered_normalized]
+        edge_colors = [cmap(value) for value in R_reordered_normalized]
     else:
         edge_colors = [colors_lst[0] for _ in range(len(NET.edges))]
 

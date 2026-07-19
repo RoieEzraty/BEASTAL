@@ -1,12 +1,16 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 
+import colors
+
 if TYPE_CHECKING:
     from Supervisor_Class import Supervisor
     from User_Variables import User_Variables
     from Network_State import Network_State
     from Network_Structure import Network_Structure
     from Color_Scheme import Color_Scheme
+
+colors_lst, red, cmap = colors.color_scheme()
 
 # ===================================================
 # Class - Big class that contains all smaller classes
