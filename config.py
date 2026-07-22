@@ -8,28 +8,42 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+# -----------------------------
+# Relevant to all
+# -----------------------------
+
+R_UPDATE = "deltaR_propto_dp_nonlin"
+# R_UPDATE = "deltaR_propto_dp"
+
+# -----------------------------
+# Networ Structure
+# -----------------------------
+
 @dataclass(frozen=True)
 class StructureConfig:
     """Network topology and boundary-node configuration."""
 
-    net_type: str = "FC"
+    # net_type: str = "FC"
+    net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 3
+    Nin: int = 4
     Nout: int = 3
-    Ninter: int = 3
+    Ninter: int = 7
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     add_ground: bool = True
     rand_seed: int = 35
 
+# -----------------------------
+# User Variables
+# -----------------------------
 
 @dataclass(frozen=True)
 class VariablesConfig:
     """Physical update-rule parameters."""
 
-    # R_update: str = "deltaR_propto_dp"
-    R_update: str = "deltaR_propto_dp_nonlin"
+    R_update: str = R_UPDATE
     gamma: NDArray[np.float_] = field(default_factory=lambda: np.array([1.0]))
     R_max: float = 2.0
     R_min: float = 0.02
@@ -37,6 +51,9 @@ class VariablesConfig:
     decay_R: float = 2e-3
     normalize_step: bool = False
 
+# -----------------------------
+# Networkx python instance
+# -----------------------------
 
 @dataclass(frozen=True)
 class NetworkxNetConfig:
@@ -45,6 +62,9 @@ class NetworkxNetConfig:
     scale: float = 50.0
     squish: float = 0.01
 
+# -----------------------------
+# External Supervisor parameters
+# -----------------------------
 
 @dataclass(frozen=True)
 class SupervisorConfig:
@@ -55,10 +75,14 @@ class SupervisorConfig:
     training_scheme: str = "Adaline"
     iterations: int = 2000
     alpha: float = 0.028
-    alpha_scale_nonlin: float = 50.0
+    alpha_scale_nonlin: float = 62.5
     use_p_tag: bool = False
     stay_sample: int = 1
-    normalize_loss: bool = True
+    normalize_loss: bool = R_UPDATE in {
+        "deltaR_propto_dp_nonlin",
+        "deltaR_propto_dp_nonlin_decay",
+    }
+    # normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
     anneal: bool = True
@@ -70,14 +94,18 @@ class SupervisorConfig:
     print_every: int = 1
     calculate_cosine_sim: bool = False
 
-    M_values: NDArray[np.float_] = field(
-        default_factory=lambda: np.array([2 / 4, 1 / 4, 0.1, 0.35, 0.75, 0.04])
-    )
+    # M_values: NDArray[np.float_] = field(
+    #     default_factory=lambda: np.array([2 / 4, 1 / 4, 0.1, 0.35, 0.75, 0.04])
+    # )
+    M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
     normalize: float = 0.75
-    random_state_M: int = 35
-    random_state: int = 52
+    random_state_M: int = 36
+    random_state: int = 54
 
+# -----------------------------
+# Chain State parameters
+# -----------------------------
 
 @dataclass(frozen=True)
 class StateConfig:
@@ -85,6 +113,9 @@ class StateConfig:
 
     R_vec_i: NDArray[np.float_] = field(default_factory=lambda: np.ones(6))
 
+# -----------------------------
+# One config class to rule them all
+# -----------------------------
 
 @dataclass(frozen=True)
 class ExperimentConfig:

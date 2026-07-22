@@ -21,6 +21,7 @@ class Network_Structure:
         """
         net_types:
         FC                   - each input connected to each output
+        PC                   - layered network where each node omits one well-mixed next-layer connection
         FC_connected_outputs - FC and all outputs connected
         partialInter         - each input connected to an inter node, that inter node to an output node
         square               - N*N array of nodes, each node has 4 neighbors, some are inputs and some outputs
@@ -52,7 +53,7 @@ class Network_Structure:
         self.net_height = config.Strctr.net_height
         self.net_len = config.Strctr.net_length
 
-    def build_incidence(self, type: str = 'FC') -> None:
+    def build_incidence(self, type: str | None = None) -> None:
         """
         build_incidence builds the incidence matrix DM
 
@@ -67,20 +68,24 @@ class Network_Structure:
         NE         - int, # edges in network
         NN         - int, # nodes in network
         """
-        if type == 'FC' or type == 'FC_connected_outputs':
+        incidence_type = self.net_type if type is None else type
+        if incidence_type == 'FC' or incidence_type == 'FC_connected_outputs':
             self.EI, self.EJ, self.EIEJ_plots, self.DM, self.NE, self.NN = matrix_functions.build_incidence(self)
-        elif type == 'partialInter':
+        elif incidence_type == 'PC':
+            self.EI, self.EJ, self.EIEJ_plots, self.DM, self.NE, self.NN = \
+                matrix_functions.build_incidence_PC(self)
+        elif incidence_type == 'partialInter':
             print('partialInter is true')
             self.EI, self.EJ, self.EIEJ_plots, self.DM, self.NE, self.NN =\
                 matrix_functions.build_incidence_partialInter(self)
-        elif type == 'square':
+        elif incidence_type == 'square':
             print('building square network')
             self.EI, self.EJ, self.EIEJ_plots, self.DM, self.NE, self.NN = matrix_functions.build_incidence_square(self)
-        elif type == 'beads':
+        elif incidence_type == 'beads':
             print('building network for beads')
             self.EI, self.EJ, self.EIEJ_plots, self.DM, self.NE, self.NN = matrix_functions.build_incidence_beads(self)
         else:
-            raise ValueError(f"Unknown network type: {type}")
+            raise ValueError(f"Unknown network type: {incidence_type}")
 
         output_at_start = np.isin(self.EI, self.output_nodes_arr)
         output_at_end = np.isin(self.EJ, self.output_nodes_arr)

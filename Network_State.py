@@ -83,6 +83,8 @@ class Network_State:
 
         if add_noise:
             self.R_in_t[0] += np.random.normal(loc=0.0, scale=add_noise, size=BigClass.Strctr.NE)
+
+        # self.R_in_t[0] = 10*self.R_in_t[0]
         # resistances for bead net as if w/out beads
         self.R_backg: NDArray[np.float_] = BigClass.Variabs.R_min * np.ones(BigClass.Strctr.NE)
 

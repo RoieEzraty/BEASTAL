@@ -82,7 +82,7 @@ class Networkx_Net:
                     pos_lattice[start_index + 2] = ((self.scale / 2 - self.squish) + x_offset, 0 + y_offset)
                     pos_lattice[start_index + 3] = (0 + x_offset, (self.scale / 2 - self.squish) + y_offset)
                     pos_lattice[start_index + 4] = (0 + x_offset, 0 + y_offset)
-        elif BigClass.Strctr.net_type == 'FC':
+        elif BigClass.Strctr.net_type in ('FC', 'FC_connected_outputs', 'PC'):
             pos_lattice = {}
 
             k = 0  # horizontal position

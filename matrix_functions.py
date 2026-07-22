@@ -237,6 +237,74 @@ def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDAr
     return EI, EJ, EIEJ_plots, DM, NE, NN
 
 
+def build_incidence_PC(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_],
+                                                              List[tuple[int, int]], NDArray[np.int_],
+                                                              int, int]:
+    """Build a balanced partially connected input-intermediate-output network.
+
+    Every input is connected to all intermediate nodes except one, and every
+    intermediate node is connected to all outputs except one.  The omitted
+    target is cycled in reverse order so the missing connections are spread
+    across each layer.  Thus, for three nodes per layer, the source-to-target
+    connections are ``(1, 2)``, ``(1, 3)``, and ``(2, 3)``.
+
+    Every output is connected to the single ground node.
+    """
+    if len(Strctr.inter_nodes_arr) < 2:
+        raise ValueError("PC networks require at least two intermediate nodes")
+    if len(Strctr.output_nodes_arr) < 2:
+        raise ValueError("PC networks require at least two output nodes")
+    if len(Strctr.ground_nodes_arr) != 1:
+        raise ValueError("PC networks require add_ground=True and exactly one ground node")
+
+    node_groups = (
+        Strctr.input_nodes_arr,
+        Strctr.extraInput_nodes_arr,
+        Strctr.inter_nodes_arr,
+        Strctr.output_nodes_arr,
+        Strctr.extraOutput_nodes_arr,
+        Strctr.ground_nodes_arr,
+    )
+    NN = sum(len(nodes) for nodes in node_groups)
+    ground_node = int(Strctr.ground_nodes_arr[0])
+    EIlst: List[int] = []
+    EJlst: List[int] = []
+
+    def connect_all_but_one(sources: NDArray[np.int_], targets: NDArray[np.int_]) -> None:
+        """Connect each source to every target except a balanced cyclic omission."""
+        for source_index, source in enumerate(sources):
+            omitted_target = (-source_index - 1) % len(targets)
+            for target_index, target in enumerate(targets):
+                if target_index != omitted_target:
+                    EIlst.append(int(source))
+                    EJlst.append(int(target))
+
+    connect_all_but_one(Strctr.input_nodes_arr, Strctr.inter_nodes_arr)
+    connect_all_but_one(Strctr.extraInput_nodes_arr, Strctr.inter_nodes_arr)
+    connect_all_but_one(Strctr.inter_nodes_arr, Strctr.output_nodes_arr)
+
+    # Extra outputs retain the ordinary layered connections, when present.
+    for inter_node in Strctr.inter_nodes_arr:
+        for output_node in Strctr.extraOutput_nodes_arr:
+            EIlst.append(int(inter_node))
+            EJlst.append(int(output_node))
+
+    for output_node in np.concatenate((Strctr.output_nodes_arr, Strctr.extraOutput_nodes_arr)):
+        EIlst.append(int(output_node))
+        EJlst.append(ground_node)
+
+    EI: NDArray[np.int_] = array(EIlst, dtype=np.int_)
+    EJ: NDArray[np.int_] = array(EJlst, dtype=np.int_)
+    NE = len(EI)
+    EIEJ_plots = [(int(source), int(target)) for source, target in zip(EI, EJ)]
+    DM: NDArray[np.int_] = zeros((NE, NN), dtype=np.int_)
+    for edge_index, (source, target) in enumerate(zip(EI, EJ)):
+        DM[edge_index, int(source)] = 1
+        DM[edge_index, int(target)] = -1
+
+    return EI, EJ, EIEJ_plots, DM, NE, NN
+
+
 def build_incidence_partialInter(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_],
                                                                        List[tuple[int, int]], NDArray[np.int_],
                                                                        int, int]:

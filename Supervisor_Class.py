@@ -70,12 +70,16 @@ class Supervisor:
 
     def assign_M(self, config: ExperimentConfig, Strctr: "Network_Structure") -> None:
         """Build and optionally normalize the regression task matrix."""
-        M_values = config.Sprvsr.M_values.copy()
         required_size = Strctr.Nin * Strctr.Nout
-        if np.size(M_values) < required_size:
+        configured_values = config.Sprvsr.M_values
+        if configured_values is None:
             M_values = functions.random_gen_M(config.Sprvsr.random_state_M, required_size)
         else:
-            M_values = M_values[:required_size]
+            M_values = configured_values.copy()
+            if np.size(M_values) < required_size:
+                M_values = functions.random_gen_M(config.Sprvsr.random_state_M, required_size)
+            else:
+                M_values = M_values[:required_size]
         if config.Sprvsr.normalize_M:
             M_values = functions.normalize_M(
                 M_values, config.Sprvsr.normalize, Strctr.Nin, Strctr.Nout
