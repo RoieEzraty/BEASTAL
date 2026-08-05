@@ -73,9 +73,9 @@ class SupervisorConfig:
     task_type: str = "Regression"
     dataset_type: str = "uniform_random"
     training_scheme: str = "Adaline"
-    iterations: int = 2000
+    iterations: int = 4000
     alpha: float = 0.028
-    alpha_scale_nonlin: float = 62.5
+    alpha_scale_nonlin: float = 68.0
     use_p_tag: bool = False
     stay_sample: int = 1
     normalize_loss: bool = R_UPDATE in {
@@ -86,7 +86,7 @@ class SupervisorConfig:
     supress_prints: bool = True
     measure_accuracy_every: int = 15
     anneal: bool = True
-    T_annealing: float = 1.0
+    T_annealing: float = 0.5
     include_Power: bool = False
     access_interNodes: bool = False
     noise_to_extra: bool = False
@@ -100,8 +100,8 @@ class SupervisorConfig:
     M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
     normalize: float = 0.75
-    random_state_M: int = 36
-    random_state: int = 54
+    random_state_M: int = 38
+    random_state: int = 55
 
 # -----------------------------
 # Chain State parameters
@@ -112,6 +112,7 @@ class StateConfig:
     """Initial network-state configuration."""
 
     R_vec_i: NDArray[np.float_] = field(default_factory=lambda: np.ones(6))
+    R_noise: float = 0.1
 
 # -----------------------------
 # One config class to rule them all

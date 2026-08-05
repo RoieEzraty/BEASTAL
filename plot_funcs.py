@@ -41,7 +41,8 @@ plt.rcParams['legend.loc'] = 'best'
 # # The functions
 
 def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_network: Optional[bool] = False,
-                    node_labels: bool = False, save: bool = False, name: Optional[str] = None) -> None:
+                    node_labels: bool = False, save: bool = False, name: Optional[str] = None,
+                    log_R: bool = False) -> None:
     """
     one plot with 4 subfigures of
     1) mean absolute value of loss in time
@@ -56,6 +57,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     node_labels     - boolean of whether to plot node number
     save            - boolean of whether to save the plot
     name            - optional name for the saved plot
+    log_R           - boolean of whether to use a logarithmic scale for resistances
 
     outputs:
     1 matplotlib plot
@@ -114,6 +116,9 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
 
     # Resistances
     ax3.plot(BigClass.State.R_in_t[1:])
+    if log_R:
+        ax3.set_yscale('log')
+        ax3.set_ylim(1e-4, 1e2)
     ax3.set_title(r'$R$')
     ax3.set_xlabel('t')
 
