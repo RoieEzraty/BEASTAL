@@ -23,11 +23,11 @@ from matplotlib.colors import LogNorm
 import statistical_analysis as statistics
 
 if TYPE_CHECKING:
+    from Big_Class import Big_Class
     from Color_Scheme import Color_Scheme
-    from Network_State import Network_State
 
 
-def export_importants_csv(State: "Network_State", file_path: str | PathLike[str]) -> None:
+def export_importants_csv(BigClass: "Big_Class", file_path: str | PathLike[str]) -> None:
     """Export the principal network histories to one CSV row per update time.
 
     The array-valued columns are JSON arrays, so each input, measured output,
@@ -35,23 +35,27 @@ def export_importants_csv(State: "Network_State", file_path: str | PathLike[str]
     vector, and resistance vector occupies a single CSV cell. MSE is the mean
     squared value of the per-output loss. The initial update values and
     resistances are omitted; each row therefore contains the values resulting
-    from that row's update.
+    from that row's update. With batch training, resistance rows within a batch
+    remain constant and the batch-boundary row contains the change produced by
+    the averaged update-modality values.
 
     Parameters
     ----------
-    State
-        Network state containing the recorded time histories.
+    BigClass
+        Simulation classes containing the recorded time histories.
     file_path
         Destination CSV filename.
     """
+    State = BigClass.State
+    Sprvsr = BigClass.Sprvsr
     n_updates = int(State.t)
     histories = {
-        "input": State.input_drawn_in_t,
+        "input": Sprvsr.input_drawn_in_t,
         "measured_output": State.output_in_t,
         "node_values": State.p_in_t,
-        "input_update": State.input_update_in_t[1:],
-        "output_update": State.output_update_in_t[1:],
-        "loss": State.loss_in_t,
+        "input_update": Sprvsr.input_update_in_t[1:],
+        "output_update": Sprvsr.output_update_in_t[1:],
+        "loss": Sprvsr.loss_in_t,
         "Rs": State.R_in_t[1:],
     }
 

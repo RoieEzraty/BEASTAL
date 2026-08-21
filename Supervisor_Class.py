@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, List, Optional, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,21 +13,30 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder
 from sklearn.utils import Bunch, shuffle
 
 import functions
+import matrix_functions
+import solve
 from config import ExperimentConfig
 
 if TYPE_CHECKING:
+    from Big_Class import Big_Class
     from Network_State import Network_State
     from Network_Structure import Network_Structure
     from User_Variables import User_Variables
 
 
 class Supervisor:
-    """Own the task, training data, and learning-rate schedule."""
+    """Own the task, training data, losses, and update-modality values."""
 
     def __init__(self, config: ExperimentConfig, Strctr: "Network_Structure",
                  Variabs: "User_Variables") -> None:
         sprvsr = config.Sprvsr
         self.iterations: int = sprvsr.iterations
+        batch_size = sprvsr.batch_size
+        if (isinstance(batch_size, bool)
+                or not isinstance(batch_size, (int, np.integer))
+                or batch_size < 1):
+            raise ValueError("batch_size must be a positive integer")
+        self.batch_size: int = int(batch_size)
         self.task_type: str = sprvsr.task_type
         self.dataset_type: str = sprvsr.dataset_type
         self.training_scheme: str = sprvsr.training_scheme
@@ -59,6 +68,20 @@ class Supervisor:
         self.assign_M(config, Strctr)
         self.create_dataset_and_targets(config, Strctr, Variabs)
         self.create_noise_for_extras(Strctr, Variabs)
+
+    def reset_training_history(self, Strctr: "Network_Structure") -> None:
+        """Reset the task-related histories and update-modality values."""
+        self.input_drawn_in_t: List[NDArray[np.float_]] = []
+        self.extraInput_in_t: List[NDArray[np.float_]] = []
+        self.desired_in_t: List[NDArray[np.float_]] = []
+        self.loss_in_t: List[NDArray[np.float_]] = []
+        self.loss_scalar_in_t: NDArray[np.float_] = np.array([], dtype=float)
+        self.input_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.Nin)]
+        self.extraInput_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.extraNin)]
+        self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
+        self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
+        self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
+        self.update_vec_in_t: List[NDArray[np.float_]] = []
 
     def assign_alpha(self, alpha: float, Variabs: "User_Variables") -> None:
         """Assign the learning rate, including nonlinear-rule scaling."""
@@ -160,3 +183,245 @@ class Supervisor:
         self.alpha = self.alpha_initial * np.exp(-State.t / (self.T * self.iterations))
         if State.t < self.iterations:
             self.alpha_in_t[State.t] = self.alpha
+
+    def calc_loss(self, State: "Network_State") -> None:
+        """Calculate and record the task loss for the current measurement."""
+        if self.use_p_tag:
+            if self.include_Power:
+                self.loss = functions.loss_fn_2samples(
+                    State.output, State.output_in_t[-2], State.desired, self.desired_in_t[-2],
+                    State.Power_norm, State.Power_norm_in_t[-2], self.lam
+                )
+            else:
+                self.loss = functions.loss_fn_2samples(
+                    State.output, State.output_in_t[-2], State.desired, self.desired_in_t[-2]
+                )
+        elif self.include_Power:
+            print('Power_norm', State.Power_norm)
+            print('lam', self.lam)
+            self.loss = functions.loss_fn_1sample(
+                State.output, State.desired, State.Power_norm, self.lam
+            )
+        else:
+            self.loss = functions.loss_fn_1sample(State.output, State.desired)
+        self.loss_in_t.append(self.loss)
+
+    def calc_loss_scalar(self, State: "Network_State",
+                         Strctr: "Network_Structure", sample_count: int = 16) -> None:
+        """Calculate loss normalized by the initial network's first 16 samples."""
+        sample_count = min(sample_count, len(self.X_train))
+        if sample_count == 0:
+            raise ValueError("Cannot normalize loss with an empty training dataset")
+        initial_K = matrix_functions.K_from_R(State.R_in_t[0])
+        nodes = (Strctr.input_nodes_arr, Strctr.extraInput_nodes_arr,
+                 Strctr.ground_nodes_arr)
+        initial_outputs = []
+        for input_values in self.X_train[:sample_count]:
+            constraints = functions.setup_constraints_given_pin(
+                nodes, (input_values, self.extraInput_update_in_t[0]),
+                Strctr.NN, Strctr.EI, Strctr.EJ
+            )
+            pressures, _ = solve.solve_flow(Strctr, constraints, initial_K)
+            initial_outputs.append(pressures[Strctr.output_nodes_arr].ravel())
+        desired = self.y_train[:sample_count]
+        if self.task_type == 'Iris_classification':
+            desired = desired @ State.targets_mat
+        elif self.task_type != 'Regression':
+            raise ValueError(f"Unknown task type: {self.task_type}")
+        initial_losses = desired - np.asarray(initial_outputs)
+
+        # Previous normalization denominators:
+        # denominator = self.y_train
+        # denominator = np.mean(np.square(np.sum(1/(Strctr.Nin+1)-self.M, axis=0)))
+        if self.loss_type == 'MAE':
+            denominator = np.mean(np.abs(initial_losses))
+            self.loss_scalar_in_t = np.mean(np.mean(np.abs(self.loss_in_t), axis=1), axis=1)
+        elif self.loss_type == 'MSE':
+            denominator = np.mean(np.square(initial_losses))
+            self.loss_scalar_in_t = np.mean(np.mean(np.square(self.loss_in_t), axis=1), axis=1)
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
+        self.loss_scalar_in_t /= denominator
+
+    def update_input(self, BigClass: "Big_Class") -> None:
+        """Calculate and record the next input pressure in update modality."""
+        R_update = BigClass.Variabs.R_update
+        loss = self.loss_in_t[-1]
+        input_update = self.input_update_in_t[-1]
+        input_drawn = self.input_drawn_in_t[-1]
+        if self.training_scheme in ['GD_like', 'Adaline']:
+            delta = -self.update_vec[BigClass.Strctr.input_nodes_arr]
+        else:
+            if self.use_p_tag:
+                input_drawn_prev = self.input_drawn_in_t[-2]
+            else:
+                input_drawn_prev = np.zeros([BigClass.Strctr.Nin])
+                loss = np.array([copy.copy(loss[0]), np.zeros([BigClass.Strctr.Nout])])
+            if self.normalize_loss:
+                delta = (input_drawn-input_drawn_prev) * self.alpha * \
+                    (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
+            else:
+                delta = (input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
+        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
+            self.input_update_nxt = input_update - delta
+        elif R_update == 'beads':
+            self.input_update_nxt = input_update + self.alpha * np.mean(np.abs(loss[0]))
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
+                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
+            self.input_update_nxt = -delta
+        elif R_update == 'grad_desc':
+            self.input_update_nxt = input_update
+        if functions.reset_update(self.input_update_nxt, BigClass.Variabs.reset_thresh_b,
+                                  BigClass.Variabs.reset_thresh_s):
+            self.input_update_nxt = self.input_update_in_t[0]
+        self.input_update_in_t.append(self.input_update_nxt)
+        if not self.supress_prints:
+            print('input_update_nxt=', self.input_update_nxt)
+
+    def update_extraInput(self, BigClass: "Big_Class") -> None:
+        """Calculate and record the next extra-input pressure in update modality."""
+        R_update = BigClass.Variabs.R_update
+        loss = self.loss_in_t[-1]
+        extraInput_update = self.extraInput_update_in_t[-1]
+        extraInput = self.extraInput_in_t[-1]
+        if self.use_p_tag:
+            extraInput_prev = self.extraInput_in_t[-2]
+            delta = (extraInput-extraInput_prev) * self.alpha * np.mean(loss[0]-loss[1])
+        else:
+            delta = extraInput * self.alpha * np.mean(loss[0])
+        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
+            self.extraInput_update_nxt = extraInput_update - delta
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
+                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
+            self.extraInput_update_nxt = -delta
+        elif R_update == 'grad_desc':
+            self.extraInput_update_nxt = extraInput_update
+        if functions.reset_update(self.extraInput_update_nxt, BigClass.Variabs.reset_thresh_b,
+                                  BigClass.Variabs.reset_thresh_s):
+            self.extraInput_update_nxt = self.extraInput_update_in_t[0]
+        self.extraInput_update_in_t.append(self.extraInput_update_nxt)
+        if not self.supress_prints:
+            print('extraInput_update_nxt=', self.extraInput_update_nxt)
+
+    def update_inter(self, BigClass: "Big_Class") -> None:
+        """Calculate and record the next intermediate-node update pressure."""
+        State = BigClass.State
+        R_update = BigClass.Variabs.R_update
+        loss = self.loss_in_t[-1]
+        inter_update = self.inter_update_in_t[-1]
+        inter = State.inter_in_t[-1]
+        if self.use_p_tag:
+            inter_prev = State.inter_in_t[-2]
+            delta = (inter-inter_prev) * self.alpha * np.mean(loss[0]-loss[1])
+        else:
+            delta = inter * self.alpha * np.mean(loss[0])
+        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
+            self.inter_update_nxt = inter_update - delta
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
+                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
+            self.inter_update_nxt = -delta
+        elif R_update == 'grad_desc':
+            self.inter_update_nxt = inter_update
+        if functions.reset_update(self.inter_update_nxt, BigClass.Variabs.reset_thresh_b,
+                                  BigClass.Variabs.reset_thresh_s):
+            self.inter_update_nxt = self.inter_update_in_t[0]
+        self.inter_update_in_t.append(self.inter_update_nxt)
+        if not self.supress_prints:
+            print('inter_update_nxt=', self.inter_update_nxt)
+
+    def update_output(self, BigClass: "Big_Class") -> None:
+        """Calculate and record the next output pressure in update modality."""
+        State = BigClass.State
+        R_update = BigClass.Variabs.R_update
+        loss = self.loss_in_t[-1]
+        output_update = copy.copy(self.output_update_in_t[-1])
+        if self.training_scheme in ['GD_like', 'Adaline']:
+            delta = self.update_vec[BigClass.Strctr.output_nodes_arr]
+        else:
+            if self.use_p_tag:
+                output_prev = State.output_in_t[-2]
+                loss_multip = ((loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1])
+                               if self.normalize_loss else loss[0]-loss[1])
+                delta = self.alpha * (State.output-output_prev) * loss_multip
+            else:
+                loss_multip = loss[0]/np.linalg.norm(loss[0]) if self.normalize_loss else loss[0]
+                delta = self.alpha * State.output * loss_multip
+        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
+            self.output_update_nxt = output_update + delta
+        elif R_update == 'beads':
+            self.output_update_nxt = output_update + self.alpha * np.mean(loss[0])
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
+                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
+            self.output_update_nxt = delta
+        elif R_update == 'grad_desc':
+            self.output_update_nxt = output_update
+        if functions.reset_update(self.output_update_nxt, BigClass.Variabs.reset_thresh_b,
+                                  BigClass.Variabs.reset_thresh_s):
+            self.output_update_nxt = self.output_update_in_t[0]
+        self.output_update_in_t.append(self.output_update_nxt)
+        if not self.supress_prints:
+            print('output_update_nxt', self.output_update_nxt)
+
+    def update_extraOutput(self, BigClass: "Big_Class") -> None:
+        """Calculate and record the next extra-output pressure in update modality."""
+        State = BigClass.State
+        R_update = BigClass.Variabs.R_update
+        loss = self.loss_in_t[-1]
+        extraOutput_update = copy.copy(self.extraOutput_update_in_t[-1])
+        if self.use_p_tag:
+            extraOutput_prev = State.extraOutput_in_t[-2]
+            delta = (State.extraOutput-extraOutput_prev) * self.alpha * np.mean(loss[0]-loss[1])
+        else:
+            delta = State.extraOutput * self.alpha * np.mean(loss[0])
+        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
+            self.extraOutput_update_nxt = extraOutput_update + delta
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
+                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
+            self.extraOutput_update_nxt = delta
+        elif R_update == 'grad_desc':
+            self.extraOutput_update_nxt = extraOutput_update
+        if functions.reset_update(self.extraOutput_update_nxt, BigClass.Variabs.reset_thresh_b,
+                                  BigClass.Variabs.reset_thresh_s):
+            self.extraOutput_update_nxt = self.extraOutput_update_in_t[0]
+        self.extraOutput_update_in_t.append(self.extraOutput_update_nxt)
+        if not self.supress_prints:
+            print('extraOutput_update_nxt', self.extraOutput_update_nxt)
+
+    def calc_update_vals_vec(self, BigClass: "Big_Class") -> None:
+        """Calculate update-modality node values for Adaline-like or GD-like training."""
+        State = BigClass.State
+        in_nodes = copy.copy(BigClass.Strctr.input_nodes_arr)
+        out_nodes = copy.copy(BigClass.Strctr.output_nodes_arr)
+        ground_nodes = copy.copy(BigClass.Strctr.ground_nodes_arr)
+        if self.training_scheme == 'GD_like':
+            L_vec = np.zeros(BigClass.Strctr.NN)
+            L_vec[out_nodes] = self.loss
+            delta_p = np.matmul(BigClass.Strctr.DM, State.p[:BigClass.Strctr.NN]).T
+            delta_p[delta_p == 0] = 10**(-9)
+            one_over_delta_p_norm = 1 / delta_p / np.linalg.norm(1 / delta_p)
+            C_vec = np.matmul(BigClass.Strctr.RM, L_vec) * one_over_delta_p_norm
+            if BigClass.Variabs.R_update in ['deltaR_propto_dp_nonlin', 'deltaR_propto_dp_nonlin_decay']:
+                C_vec_norm = C_vec[0] / np.linalg.norm(C_vec[0])
+                update_vec = -self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec_norm)
+            else:
+                update_vec = -self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec[0])
+        elif self.training_scheme == 'Adaline':
+            Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
+            p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
+            grad_loss_vec = matrix_functions.grad_loss_FC(
+                Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
+                Strctr.ground_nodes_arr, self.loss
+            )
+            self.grad_loss_vec = grad_loss_vec
+            grad_loss_vec_norm = grad_loss_vec / np.linalg.norm(grad_loss_vec)
+            self.grad_loss_vec_norm = grad_loss_vec_norm
+            update_vec = -self.alpha * np.matmul(
+                Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss else grad_loss_vec
+            )
+            if BigClass.Strctr.Ninter > 0:
+                for idx in BigClass.Strctr.inter_nodes_arr:
+                    update_vec = np.insert(update_vec, idx, 0)
+        else:
+            raise ValueError(f"Unknown training scheme: {self.training_scheme}")
+        self.update_vec = update_vec
+        self.update_vec_in_t.append(update_vec)

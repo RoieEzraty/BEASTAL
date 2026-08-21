@@ -29,7 +29,7 @@ class StructureConfig:
     net_length: int = 16
     Nin: int = 4
     Nout: int = 3
-    Ninter: int = 7
+    Ninter: int = 8
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     add_ground: bool = True
@@ -73,9 +73,11 @@ class SupervisorConfig:
     task_type: str = "Regression"
     dataset_type: str = "uniform_random"
     training_scheme: str = "Adaline"
-    iterations: int = 4000
+    batch_size: int = 1
+    iterations: int = 3000 * batch_size
     alpha: float = 0.028
-    alpha_scale_nonlin: float = 68.0
+    # alpha_scale_nonlin: float = 62.0 * batch_size**(1/2.7)
+    alpha_scale_nonlin: float = 62.0
     use_p_tag: bool = False
     stay_sample: int = 1
     normalize_loss: bool = R_UPDATE in {
@@ -86,7 +88,7 @@ class SupervisorConfig:
     supress_prints: bool = True
     measure_accuracy_every: int = 15
     anneal: bool = True
-    T_annealing: float = 0.5
+    T_annealing: float = 0.75  * batch_size
     include_Power: bool = False
     access_interNodes: bool = False
     noise_to_extra: bool = False

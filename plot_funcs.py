@@ -94,21 +94,21 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
         if t % len(BigClass.Sprvsr.dataset) == 0 and t != 0 and BigClass.Sprvsr.task_type != 'Regression':
             ax1.axvline(x=t, color='red', linestyle='--', linewidth=1)
     if movmean_loss:
-        movmean_loss_t = statistics.mov_ave(BigClass.State.loss_scalar_in_t, 16)
+        movmean_loss_t = statistics.mov_ave(BigClass.Sprvsr.loss_scalar_in_t, 16)
         ax1.plot(np.abs(movmean_loss_t[1:]))
     else:
-        ax1.plot(BigClass.State.loss_scalar_in_t[1:])
-    # ax1.plot(np.mean(np.mean(np.abs(BigClass.State.loss_in_t[1:]), axis=1), axis=1))
+        ax1.plot(BigClass.Sprvsr.loss_scalar_in_t[1:])
+    # ax1.plot(np.mean(np.mean(np.abs(BigClass.Sprvsr.loss_in_t[1:]), axis=1), axis=1))
     ax1.set_yscale('log')
-    ax1.set_ylim(1e-5, 1)
+    ax1.set_ylim(5e-5, 1e1)
     ax1.set_title(r'$\|\mathcal{L}\|$')
     ax1.set_xlabel('t')
 
     # Update modality
-    ax2.plot(BigClass.State.output_update_in_t[1:])
-    ax2.plot(BigClass.State.input_update_in_t[1:])
+    ax2.plot(BigClass.Sprvsr.output_update_in_t[1:])
+    ax2.plot(BigClass.Sprvsr.input_update_in_t[1:])
     if BigClass.Sprvsr.access_interNodes:
-        ax2.plot(BigClass.State.inter_update_in_t[1:])
+        ax2.plot(BigClass.Sprvsr.inter_update_in_t[1:])
     ax2.set_title('"Update" modality pressure')
     ax2.set_xlabel('t')
     if legend2 and len(legend2) < 6:

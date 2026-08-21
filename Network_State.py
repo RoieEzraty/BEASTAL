@@ -32,33 +32,23 @@ class Network_State:
     def __init__(self, config: ExperimentConfig, BigClass: "Big_Class") -> None:
         super().__init__()
         self.initial_R: NDArray[np.float_] = np.asarray(config.State.R_vec_i, dtype=float).copy()
-        self.t: int = 0  # time, defined as number of R updates, i.e. times the learning rate alpha is used.
+        self.t: int = 0  # number of calculated training updates, including updates buffered in a batch
         self.p: NDArray[np.float_] = array([])  # pressure
         self.u: NDArray[np.float_] = array([])  # flow rate
         # "measurement" modality
-        self.input_drawn_in_t: List[NDArray[np.float_]] = []  # pressure at inputs in time
-        self.extraInput_in_t: List[NDArray[np.float_]] = []  # pressure at additional inputs in time
         self.inter_in_t: List[NDArray[np.float_]] = []  # pressure at intermediate nodes (not input/output) in time
         self.output_in_t: List[NDArray[np.float_]] = []  # pressure at outputs in time
         self.p_in_t: List[NDArray[np.float_]] = []  # measured pressures on all physical nodes in time
         self.extraOutput_in_t: List[NDArray[np.float_]] = []  # pressure at additional outputs, loss not calculated
-        self.desired_in_t: List[NDArray[np.float_]] = []  # desired output pressure for each sample, input dependent
-        # "update" modality
         Strctr = BigClass.Strctr
-        self.input_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.Nin)]
-        self.extraInput_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.extraNin)]
-        self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
-        self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
-        self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
+        BigClass.Sprvsr.reset_training_history(Strctr)
+        self._update_value_snapshots: List[Tuple[NDArray[np.float_], ...]] = []
+        self._last_update_snapshot_t: Optional[int] = None
         self.hysteresis: NDArray[np.float_] = np.zeros(Strctr.NE, dtype=float)
-        # Loss and Power
-        self.loss_in_t: List[NDArray[np.float_]] = []
-        self.loss_scalar_in_t: NDArray[np.float_] = np.array([], dtype=float)
         self.Power_norm: float = 0.0
         self.Power_norm_in_t: List[float] = []  # Power dissipation in whole network, normalized by inputs
-        self.update_vec_in_t: List[NDArray[np.float_]] = []  # input and output values in update modality, w/out hysteresis
         # Other sizes that make problems sometimes
-        self.extraInput: NDArray[np.float_] = copy.copy(self.extraInput_update_in_t[-1])
+        self.extraInput: NDArray[np.float_] = copy.copy(BigClass.Sprvsr.extraInput_update_in_t[-1])
 
     def initiate_resistances(self, BigClass: "Big_Class", R_vec_i: Optional[NDArray[np.float_]] = None,
                              add_noise: Optional[float] = 0.0) -> None:
@@ -69,6 +59,8 @@ class Network_State:
         BigClass - class instance including User_Variables, Network_Structure instances, etc.
         R_vec_i  - optional initial resistances, array of size [NE,]
         """
+        self._update_value_snapshots.clear()
+        self._last_update_snapshot_t = None
         if R_vec_i is not None:  # user speficied initial resistances
             if np.size(R_vec_i) != BigClass.Strctr.NE:
                 print('R_vec_i has wrong size, initializing all ones')
@@ -147,9 +139,9 @@ class Network_State:
         if modality == 'measure_for_accuracy':  # don't add to time vector if this is accuracy calculation
             pass
         else:
-            self.input_drawn_in_t.append(self.input_drawn)
-            self.extraInput_in_t.append(self.extraInput)
-            self.desired_in_t.append(self.desired)
+            Sprvsr.input_drawn_in_t.append(self.input_drawn)
+            Sprvsr.extraInput_in_t.append(self.extraInput)
+            Sprvsr.desired_in_t.append(self.desired)
 
         # optionally print to user
         if not Sprvsr.supress_prints:
@@ -232,15 +224,39 @@ class Network_State:
             # Access inter nodes if needed
             inters = BigClass.Sprvsr.access_interNodes or access_inters
 
+            latest_update_values = (
+                BigClass.Sprvsr.input_update_in_t[-1],
+                BigClass.Sprvsr.extraInput_update_in_t[-1],
+                BigClass.Sprvsr.output_update_in_t[-1],
+                BigClass.Sprvsr.extraOutput_update_in_t[-1],
+                BigClass.Sprvsr.inter_update_in_t[-1],
+            )
+            if self._last_update_snapshot_t != self.t:
+                self._update_value_snapshots.append(tuple(
+                    np.asarray(values, dtype=float).copy()
+                    for values in latest_update_values
+                ))
+                if len(self._update_value_snapshots) > BigClass.Sprvsr.batch_size:
+                    del self._update_value_snapshots[:-BigClass.Sprvsr.batch_size]
+                self._last_update_snapshot_t = self.t
+
+            if self.t % BigClass.Sprvsr.batch_size == 0:
+                recent_snapshots = self._update_value_snapshots[-BigClass.Sprvsr.batch_size:]
+                update_values = tuple(
+                    np.mean(np.stack([snapshot[index] for snapshot in recent_snapshots]), axis=0)
+                    for index in range(len(latest_update_values))
+                )
+            else:
+                update_values = latest_update_values
+
             nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
                            BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
                            BigClass.Strctr.extraOutput_nodes_arr)
-            nodeData_tuple = (self.input_update_in_t[-1], self.extraInput_update_in_t[-1],
-                              self.output_update_in_t[-1], self.extraOutput_update_in_t[-1])
+            nodeData_tuple = update_values[:4]
 
             if inters:  # add inter nodes if needed
                 nodes_tuple += (BigClass.Strctr.inter_nodes_arr,)
-                nodeData_tuple += (self.inter_update_in_t[-1],)
+                nodeData_tuple += (update_values[4],)
         else:
             raise ValueError(f"Unknown modality: {modality}")
 
@@ -275,255 +291,21 @@ class Network_State:
                 self.extraOutput_in_t.append(self.extraOutput)
                 self.inter_in_t.append(self.inter)
 
-    def update_input(self, BigClass: "Big_Class") -> None:
-        """
-        Calculates next input pressure values in update modality given measurement, either for 1 or 2 sampled pressures
 
-        inputs:
-        BigClass - Class instance containing User_Variables, Network_Structure, etc.
 
-        outputs:
-        input_update_nxt: np.ndarray [Nin,] input pressure of update modality at time t
-        """
-        R_update: str = BigClass.Variabs.R_update  # dummy variable
-        loss: NDArray[np.float_] = self.loss_in_t[-1]  # copy loss
-        input_update: NDArray[np.float_] = self.input_update_in_t[-1]
-        input_drawn: NDArray[np.float_] = self.input_drawn_in_t[-1]
 
-        if BigClass.Sprvsr.training_scheme in ['GD_like', 'Adaline']:
-            delta: NDArray[np.float_] = - self.update_vec[BigClass.Strctr.input_nodes_arr]
-        else:
-            if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
-                input_drawn_prev: NDArray[np.float_] = self.input_drawn_in_t[-2]
-            else:  # use zero input, output and loss for 2nd sample
-                input_drawn_prev = np.zeros([BigClass.Strctr.Nin])
-                loss = np.array([copy.copy(loss[0]), np.zeros([BigClass.Strctr.Nout])])  # good loss dims for next "if"
-            if BigClass.Sprvsr.normalize_loss:
-                delta = (input_drawn-input_drawn_prev) * BigClass.Sprvsr.alpha * \
-                    (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
-            else:
-                delta = (input_drawn-input_drawn_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
 
-        # update modality is different under schemes of change of R
-
-        # w/ memory
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
-            self.input_update_nxt: NDArray[np.float_] = input_update - delta
-        elif R_update == 'beads':
-            self.input_update_nxt = input_update + BigClass.Sprvsr.alpha * np.mean(np.abs(loss[0]))
-        # else if no memory
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
-                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
-            self.input_update_nxt = - delta
-        elif R_update == 'grad_desc':
-            self.input_update_nxt = input_update
-
-        # reset "update" modality values if diverging
-        if functions.reset_update(self.input_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
-            self.input_update_nxt = self.input_update_in_t[0]
-
-        self.input_update_in_t.append(self.input_update_nxt)  # append into list in time
-
-        # print
-        if not BigClass.Sprvsr.supress_prints:
-            print('input_update_nxt=', self.input_update_nxt)
-
-    def update_extraInput(self, BigClass: "Big_Class"):
-        """
-        Calculates next pressure values for extra input nodes in update modality given measurement,
-        either for 1 or 2 sampled pressures
-
-        inputs:
-        BigClass: Class instance containing User_Variables, Network_Structure, etc.
-
-        outputs:
-        extraInput_update_nxt: np.ndarray sized [Nout,] denoting output pressure of update modality at time t
-        """
-        R_update: str = BigClass.Variabs.R_update  # dummy variable
-        loss: NDArray[np.float_] = self.loss_in_t[-1]  # copy loss
-        extraInput_update: NDArray[np.float_] = self.extraInput_update_in_t[-1]
-        extraInput: NDArray[np.float_] = self.extraInput_in_t[-1]
-
-        # dot product for alpha in pressure update
-        if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
-            extraInput_prev: NDArray[np.float_] = self.extraInput_in_t[-2]
-            delta: NDArray[np.float_] = (extraInput-extraInput_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
-        else:  # if one sample of p in for every loss calcaultion are to be taken
-            delta = extraInput * BigClass.Sprvsr.alpha * np.mean(loss[0])
-
-        # update modality is different under schemes of change of R
-
-        # w/ memory
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
-            self.extraInput_update_nxt: NDArray[np.float_] = extraInput_update - delta
-        # else if no memory
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
-                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
-            self.extraInput_update_nxt = - delta
-        elif R_update == 'grad_desc':
-            self.extraInput_update_nxt = extraInput_update
-
-        # reset "update" modality values if diverging
-        if functions.reset_update(self.extraInput_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
-            self.extraInput_update_nxt = self.extraInput_update_in_t[0]
-        self.extraInput_update_in_t.append(self.extraInput_update_nxt)  # append into list in time
-
-        # print
-        if not BigClass.Sprvsr.supress_prints:
-            print('extraInput_update_nxt=', self.extraInput_update_nxt)
-
-    def update_inter(self, BigClass: "Big_Class") -> None:
-        """
-        Calculates next inter nodes pressure values in update modality given measurement, for 1 or 2 sampled pressures
-        only for when Sprvsr.access_interNodes==True
-
-        inputs:
-        BigClass: Class instance containing User_Variables, Network_Structure, etc.
-
-        outputs:
-        interNodes_update_nxt: np.ndarray sized [Ninter,] denoting inter nodes pressure of update modality at time t
-        """
-        R_update: str = BigClass.Variabs.R_update  # dummy variable
-        loss: NDArray[np.float_] = self.loss_in_t[-1]  # copy loss
-        inter_update: NDArray[np.float_] = self.inter_update_in_t[-1]
-        inter: NDArray[np.float_] = self.inter_in_t[-1]
-
-        # dot product for alpha in inter nodes pressure update
-        if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
-            inter_prev: NDArray[np.float_] = self.inter_in_t[-2]
-            delta: NDArray[np.float_] = (inter-inter_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
-        else:  # if one sample of p in for every loss calcaultion are to be taken
-            delta = inter * BigClass.Sprvsr.alpha * np.mean(loss[0])
-
-        # update modality is different under schemes of change of R
-
-        # w/ memory
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
-            # self.inter_update_nxt = inter_update - delta + 0.01*np.random.randn(BigClass.Strctr.Ninter)
-            self.inter_update_nxt = inter_update - delta
-        # else if no memory
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
-                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
-            # self.inter_update_nxt = - delta + 0.01*np.random.randn(BigClass.Strctr.Ninter)
-            self.inter_update_nxt = - delta
-        elif R_update == 'grad_desc':
-            self.inter_update_nxt = inter_update
-
-        # reset "update" modality values if diverging
-        if functions.reset_update(self.inter_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
-            self.inter_update_nxt = self.inter_update_in_t[0]
-
-        self.inter_update_in_t.append(self.inter_update_nxt)  # append into list in time
-
-        # print
-        if not BigClass.Sprvsr.supress_prints:
-            print('inter_update_nxt=', self.inter_update_nxt)
-
-    def update_output(self, BigClass: "Big_Class"):
-        """
-        Calculates next output pressure values in update modality given measurement, either for 1 or 2 sampled pressures
-
-        inputs:
-        BigClass: Class instance containing User_Variables, Network_Structure, etc.
-
-        outputs:
-        output_update_nxt: np.ndarray sized [Nout,] denoting output pressure of update modality at time t
-        """
-        R_update: str = BigClass.Variabs.R_update  # dummy variable
-        loss: NDArray[np.float_] = self.loss_in_t[-1]
-        output_update: NDArray[np.float_] = copy.copy(self.output_update_in_t[-1])
-
-        # element-wise multiplication for alpha in output update
-        if BigClass.Sprvsr.training_scheme in ['GD_like', 'Adaline']:
-            delta: NDArray[np.float_] = self.update_vec[BigClass.Strctr.output_nodes_arr]
-        else:
-            if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
-                output_prev: NDArray[np.float_] = self.output_in_t[-2]
-                if BigClass.Sprvsr.normalize_loss:
-                    loss_multip = (loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1])
-                else:
-                    loss_multip = loss[0]-loss[1]
-                delta = BigClass.Sprvsr.alpha * (self.output-output_prev) * loss_multip  # normalize loss
-            else:
-                if BigClass.Sprvsr.normalize_loss:
-                    loss_multip = loss[0]/np.linalg.norm(loss[0])
-                else:
-                    loss_multip = loss[0]
-                delta = BigClass.Sprvsr.alpha * self.output * loss_multip  # normalize loss
-                
-        # update modality is different under schemes of change of R
-
-        # w/ memory
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
-            self.output_update_nxt = output_update + delta
-        elif R_update == 'beads':
-            self.output_update_nxt = output_update + BigClass.Sprvsr.alpha * np.mean(loss[0])
-        # else if no memory
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
-                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
-            self.output_update_nxt = delta
-        elif R_update == 'grad_desc':
-            self.output_update_nxt = output_update
-
-        # reset "update" modality values if diverging
-        if functions.reset_update(self.output_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
-            self.output_update_nxt = self.output_update_in_t[0]
-
-        self.output_update_in_t.append(self.output_update_nxt)
-
-        # print
-        if not BigClass.Sprvsr.supress_prints:
-            print('output_update_nxt', self.output_update_nxt)
-
-    def update_extraOutput(self, BigClass: "Big_Class"):
-        """
-        Calculates next output pressure values in update modality given measurement, either for 1 or 2 sampled pressures
-
-        inputs:
-        BigClass: Class instance containing User_Variables, Network_Structure, etc.
-
-        outputs:
-        extraOutput_update_nxt: np.ndarray sized [Nout,] denoting output pressure of update modality at time t
-        """
-        R_update: str = BigClass.Variabs.R_update  # dummy variable
-        loss: NDArray[np.float_] = self.loss_in_t[-1]
-        extraOutput_update: NDArray[np.float_] = copy.copy(self.extraOutput_update_in_t[-1])
-        # element-wise multiplication for alpha in output update
-        if BigClass.Sprvsr.use_p_tag:  # if two samples of p in for every loss calcaultion are to be taken
-            extraOutput_prev: NDArray[np.float_] = self.extraOutput_in_t[-2]
-            delta: NDArray[np.float_] = (self.extraOutput-extraOutput_prev) * BigClass.Sprvsr.alpha * np.mean(loss[0]-loss[1])
-        else:
-            delta = self.extraOutput * BigClass.Sprvsr.alpha * np.mean(loss[0])
-        # update modality is different under schemes of change of R
-
-        # w/ memory
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
-            self.extraOutput_update_nxt = extraOutput_update + delta
-        # else if no memory
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
-                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
-            self.extraOutput_update_nxt = delta
-        elif R_update == 'grad_desc':
-            self.extraOutput_update_nxt = extraOutput_update
-
-        # reset "update" modality values if diverging
-        if functions.reset_update(self.extraOutput_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
-            self.extraOutput_update_nxt = self.extraOutput_update_in_t[0]
-
-        self.extraOutput_update_in_t.append(self.extraOutput_update_nxt)
-
-        # print
-        if not BigClass.Sprvsr.supress_prints:
-            print('extraOutput_update_nxt', self.extraOutput_update_nxt)
 
     def update_Rs(self, BigClass: "Big_Class", delta_K: Optional[NDArray[np.float_]] = None) -> None:
         """
-        update resistances of NE edges
+        Calculate and record the next resistances of all edges.
+
+        The material remains unchanged within a batch. At the batch boundary,
+        ``solve_flow_given_modality`` has solved the update modality using the
+        mean update-node values for the batch, and this method applies the
+        configured material rule once to that averaged update state. Thus
+        ``R_in_t`` still receives one entry per training update, including the
+        unchanged entries within a batch.
 
         inputs:
         BigClass: Class instance containing User_Variables, Network_Structure, etc.
@@ -531,7 +313,12 @@ class Network_State:
         outputs:
         R_vec  - [NE] array of resistivities
         """
+        if self.t % BigClass.Sprvsr.batch_size:
+            self.R_in_t.append(self.R_in_t[-1].copy())
+            return
+
         R_vec: NDArray[np.float_] = self.R_in_t[-1]
+        history_length = len(self.R_in_t)
         delta_p: NDArray[np.float_] = self.u * R_vec
         # delta_p: NDArray[np.float_] = np.matmul(BigClass.Strctr.DM, BigClass.State.p[:BigClass.Strctr.NN])  # same as u * R_vec
 
@@ -611,7 +398,9 @@ class Network_State:
         if not BigClass.Sprvsr.supress_prints:
             pass
 
-        self.R_in_t[-1][self.R_in_t[-1] < 10**-12] = 10**-12  # inhibit vanishing R - already accounted for above?
+        if len(self.R_in_t) != history_length + 1:
+            raise ValueError(f"Unknown resistance update rule: {BigClass.Variabs.R_update}")
+        self.R_in_t[-1][self.R_in_t[-1] < 10**-12] = 10**-12
 
     def dK_grad_desc(self, Strctr: "Network_Structure", dK_step: float,
                      p_desired: NDArray[np.float_], func: str) -> NDArray[np.float_]:
@@ -683,93 +472,7 @@ class Network_State:
             self.GD_cost: float = cost
         return cost
 
-    def calc_loss(self, BigClass: "Big_Class") -> None:
-        """
-        Calculates the loss given system state and desired outputs, perhaps including 1 time step ago
 
-        inputs:
-        BigClass: Class instance containing User_Variables, Network_Structure, etc.
-
-        outputs:
-        loss: np.ndarray sized [Nout,]
-        """
-        if BigClass.Sprvsr.use_p_tag:
-            if BigClass.Sprvsr.include_Power:
-                self.loss: NDArray[np.float_] = functions.loss_fn_2samples(
-                    self.output, self.output_in_t[-2], self.desired, self.desired_in_t[-2],
-                    self.Power_norm, self.Power_norm_in_t[-2], BigClass.Sprvsr.lam
-                )
-            else:
-                self.loss = functions.loss_fn_2samples(
-                    self.output, self.output_in_t[-2], self.desired, self.desired_in_t[-2]
-                )
-        else:
-            if BigClass.Sprvsr.include_Power:
-                print('Power_norm', self.Power_norm)
-                print('lam', BigClass.Sprvsr.lam)
-                self.loss = functions.loss_fn_1sample(
-                    self.output, self.desired, self.Power_norm, BigClass.Sprvsr.lam
-                )
-            else:
-                self.loss = functions.loss_fn_1sample(self.output, self.desired)
-        self.loss_in_t.append(self.loss)
-
-    def calc_update_vals_vec(self, BigClass: "Big_Class") -> None:
-        """
-        calculate the update modality values of inputs and outputs if the scheme is Adaline-like (standard way)
-        or GD_like (not used)
-        Adaline-like - delta_p_{ij}^!= alpha/gamma * (y_i-x_j) * (y_hat_i-y_i) as in the paper.
-        GD-like      - delta_p_{ij}^!= -alpha*(Loss-Loss')/(y_i-x_j-y_i'+x_j')
-                       In both cases you then multiply by U^dagger to make it realizeable on BEASTS
-
-        input:
-        BigClass
-
-        output:
-        update_vec - values for "update" modality pressures, nodes numbered as in Strctr.DM
-        """
-        in_nodes = copy.copy(BigClass.Strctr.input_nodes_arr)
-        out_nodes = copy.copy(BigClass.Strctr.output_nodes_arr)
-        ground_nodes = copy.copy(BigClass.Strctr.ground_nodes_arr)
-        if BigClass.Sprvsr.training_scheme == 'GD_like':
-            L_vec: NDArray[np.float_] = np.zeros(BigClass.Strctr.NN)
-            L_vec[out_nodes] = self.loss
-            delta_p = np.matmul(BigClass.Strctr.DM, self.p[:BigClass.Strctr.NN]).T
-            delta_p[delta_p == 0] = 10**(-9)  # correct for division by zero
-            one_over_delta_p_norm = 1 / delta_p / np.linalg.norm(1 / delta_p)  # normalize division by pressure diffs
-            C_vec: NDArray[np.float_] = np.matmul(BigClass.Strctr.RM, L_vec) * one_over_delta_p_norm
-            # C_vec: NDArray[np.float_] = np.matmul(Strctr.RM, L_vec) / delta_p
-            if BigClass.Variabs.R_update in ['deltaR_propto_dp_nonlin', 'deltaR_propto_dp_nonlin_decay']:  # normalize C as well
-                C_vec_norm = C_vec[0] / np.linalg.norm(C_vec[0])
-                update_vec: NDArray[np.float_] = - BigClass.Sprvsr.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec_norm)
-            else:
-                update_vec = - BigClass.Sprvsr.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec[0])
-        elif BigClass.Sprvsr.training_scheme == 'Adaline':
-            if BigClass.Strctr.Ninter > 0:
-                Strctr = BigClass.Strctr_fict
-            else:
-                Strctr = BigClass.Strctr
-            p = np.concatenate([BigClass.State.p[in_nodes], BigClass.State.p[out_nodes],
-                                BigClass.State.p[ground_nodes]])
-            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
-                                                          Strctr.ground_nodes_arr, BigClass.State.loss)
-            self.grad_loss_vec = grad_loss_vec
-            grad_loss_vec_norm = grad_loss_vec / np.linalg.norm(grad_loss_vec)
-            self.grad_loss_vec_norm = grad_loss_vec_norm
-            if BigClass.Sprvsr.normalize_loss:  # normalize C as well
-                update_vec = - BigClass.Sprvsr.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm)
-            else:
-                update_vec = - BigClass.Sprvsr.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
-            if BigClass.Strctr.Ninter > 0:  # enlarge update_vec again for complying with Strctr
-                # Insert zeros at each index, shifting elements to the right
-                for idx in BigClass.Strctr.inter_nodes_arr:
-                    update_vec = np.insert(update_vec, idx, 0)
-        else:
-            raise ValueError(f"Unknown training scheme: {BigClass.Sprvsr.training_scheme}")
-            # update_vec[-1] = 0  # neglect ground node
-            # grad_loss_vec[-1] = 0
-        self.update_vec = update_vec
-        self.update_vec_in_t.append(update_vec)
 
     def calc_Power_norm(self, BigClass: "Big_Class") -> None:
         self.Power_norm = statistics.power_dissip_norm(self.u, self.R_in_t[-1], self.input_drawn)
