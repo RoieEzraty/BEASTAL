@@ -81,7 +81,9 @@ class Supervisor:
         self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
         self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
         self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
-        self.update_vec_in_t: List[NDArray[np.float_]] = []
+        self.update_vec_in_t: NDArray[np.float_] = np.zeros(
+            (self.iterations, Strctr.NN), dtype=float
+        )
 
     def assign_alpha(self, alpha: float, Variabs: "User_Variables") -> None:
         """Assign the learning rate, including nonlinear-rule scaling."""
@@ -424,4 +426,10 @@ class Supervisor:
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
         self.update_vec = update_vec
-        self.update_vec_in_t.append(update_vec)
+        update_index = State.t - 1
+        if not 0 <= update_index < self.iterations:
+            raise IndexError(
+                f"Cannot store update vector for t={State.t}; "
+                f"expected 1 <= t <= {self.iterations}."
+            )
+        self.update_vec_in_t[update_index] = update_vec

@@ -80,14 +80,14 @@ class SupervisorConfig:
     alpha_scale_nonlin: float = 62.0
     use_p_tag: bool = False
     stay_sample: int = 1
-    normalize_loss: bool = R_UPDATE in {
-        "deltaR_propto_dp_nonlin",
-        "deltaR_propto_dp_nonlin_decay",
-    }
-    # normalize_loss = False
+    # normalize_loss: bool = R_UPDATE in {
+    #     "deltaR_propto_dp_nonlin",
+    #     "deltaR_propto_dp_nonlin_decay",
+    # }
+    normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal: bool = True
+    anneal: bool = False
     T_annealing: float = 0.75  * batch_size
     include_Power: bool = False
     access_interNodes: bool = False
@@ -102,7 +102,7 @@ class SupervisorConfig:
     M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
     normalize: float = 0.75
-    random_state_M: int = 38
+    random_state_M: int = 41
     random_state: int = 55
 
 # -----------------------------
