@@ -291,11 +291,6 @@ class Network_State:
                 self.extraOutput_in_t.append(self.extraOutput)
                 self.inter_in_t.append(self.inter)
 
-
-
-
-
-
     def update_Rs(self, BigClass: "Big_Class", delta_K: Optional[NDArray[np.float_]] = None) -> None:
         """
         Calculate and record the next resistances of all edges.

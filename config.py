@@ -23,13 +23,13 @@ R_UPDATE = "deltaR_propto_dp_nonlin"
 class StructureConfig:
     """Network topology and boundary-node configuration."""
 
-    # net_type: str = "FC"
-    net_type: str = "PC"
+    net_type: str = "FC"
+    # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
     Nin: int = 4
     Nout: int = 3
-    Ninter: int = 8
+    Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     add_ground: bool = True
@@ -71,24 +71,28 @@ class SupervisorConfig:
     """Dataset and training-loop configuration."""
 
     task_type: str = "Regression"
-    dataset_type: str = "uniform_random"
+    dataset_type: str = "alternating ones"
+    # dataset_type: str = "random uniform"
     training_scheme: str = "Adaline"
     batch_size: int = 1
-    iterations: int = 3000 * batch_size
-    alpha: float = 0.028
+    iterations: int = 2000 * batch_size
+    # alpha: float = 0.028
+    alpha: float = 0.28
     # alpha_scale_nonlin: float = 62.0 * batch_size**(1/2.7)
-    alpha_scale_nonlin: float = 62.0
+    # alpha_scale_nonlin: float = 62.0
+    alpha_scale_nonlin: float = 6.6 * batch_size**(1/3)
     use_p_tag: bool = False
     stay_sample: int = 1
     # normalize_loss: bool = R_UPDATE in {
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    normalize_loss = False
+    normalize_loss = True
+    # normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal: bool = False
-    T_annealing: float = 0.75  * batch_size
+    anneal: bool = True
+    T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False
     noise_to_extra: bool = False
@@ -102,8 +106,8 @@ class SupervisorConfig:
     M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
     normalize: float = 0.75
-    random_state_M: int = 41
-    random_state: int = 55
+    random_state_M: int = 46
+    random_state: int = 53
 
 # -----------------------------
 # Chain State parameters
@@ -114,7 +118,8 @@ class StateConfig:
     """Initial network-state configuration."""
 
     R_vec_i: NDArray[np.float_] = field(default_factory=lambda: np.ones(6))
-    R_noise: float = 0.1
+    # R_noise: float = 0.1
+    R_noise: float = 0.0
 
 # -----------------------------
 # One config class to rule them all
