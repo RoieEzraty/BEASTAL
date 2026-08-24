@@ -23,13 +23,13 @@ R_UPDATE = "deltaR_propto_dp_nonlin"
 class StructureConfig:
     """Network topology and boundary-node configuration."""
 
-    net_type: str = "FC"
-    # net_type: str = "PC"
+    # net_type: str = "FC"
+    net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
     Nin: int = 4
     Nout: int = 3
-    Ninter: int = 0
+    Ninter: int = 8
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     add_ground: bool = True
@@ -80,7 +80,7 @@ class SupervisorConfig:
     alpha: float = 0.28
     # alpha_scale_nonlin: float = 62.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
-    alpha_scale_nonlin: float = 6.6 * batch_size**(1/3)
+    alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
     use_p_tag: bool = False
     stay_sample: int = 1
     # normalize_loss: bool = R_UPDATE in {
@@ -106,7 +106,7 @@ class SupervisorConfig:
     M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
     normalize: float = 0.75
-    random_state_M: int = 46
+    random_state_M: int = 45
     random_state: int = 53
 
 # -----------------------------
