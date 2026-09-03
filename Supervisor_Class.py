@@ -81,6 +81,8 @@ class Supervisor:
         self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
         self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
         self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
+        self.adjoint_output_pressure: NDArray[np.float_] = np.zeros(Strctr.Nout, dtype=float)
+        self.update_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_vec_in_t: NDArray[np.float_] = np.zeros(
             (self.iterations, Strctr.NN), dtype=float
         )
@@ -412,22 +414,27 @@ class Supervisor:
         elif self.training_scheme == 'Adaline':
             Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
             p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
-            grad_loss_vec = matrix_functions.grad_loss_FC(
-                Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
-                Strctr.ground_nodes_arr, self.loss
-            )
+            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr, self.loss)
             self.grad_loss_vec = grad_loss_vec
             grad_loss_vec_norm = grad_loss_vec / np.linalg.norm(grad_loss_vec)
             self.grad_loss_vec_norm = grad_loss_vec_norm
-            update_vec = -self.alpha * np.matmul(
-                Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss else grad_loss_vec
-            )
+            update_vec = -self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss else grad_loss_vec)
             if BigClass.Strctr.Ninter > 0:
                 for idx in BigClass.Strctr.inter_nodes_arr:
                     update_vec = np.insert(update_vec, idx, 0)
-        elif self.training_scheme in {
-            'Adjoint_pressure', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn'
-        }:
+        elif self.training_scheme == 'Adjoint_pressure':
+            Strctr = BigClass.Strctr
+            if not State.p_in_t or State.p_adjoint.size < Strctr.NN:
+                raise ValueError(
+                    "Adjoint_pressure requires measurement and adjoint solves before calc_update_vals_vec"
+                )
+            forward_drop: NDArray[np.float_] = np.matmul(Strctr.DM, State.p_in_t[-1])
+            adjoint_drop: NDArray[np.float_] = np.matmul(
+                Strctr.DM, State.p_adjoint[:Strctr.NN]
+            ).ravel()
+            self.adjoint_edge_update_vec: NDArray[np.float_] = forward_drop * adjoint_drop
+            update_vec = np.matmul(Strctr.DM_dagger, self.adjoint_edge_update_vec)
+        elif self.training_scheme in {'Adjoint_current_noIn', 'Adjoint_pressure_noIn'}:
             # For L = 1/2 ||y-y_des||^2, -dL/dy = y_des-y, which is
             # exactly the sign convention used by self.loss. Alpha scales the
             # imposed current or pressure and therefore the update magnitude.
@@ -445,27 +452,13 @@ class Supervisor:
             )
         self.update_vec_in_t[update_index] = update_vec
 
-    def calc_adjoint_pressure_update_values(self, BigClass: "Big_Class") -> None:
-        """Calculate update pressures from forward and adjoint edge-pressure products.
-
-        Implements ``p_update = U_dagger [(x_j-y_i)
-        (x_j_adj-y_i_adj)]`` using the incidence matrix ``U = DM``. The adjoint
-        state already contains the learning-rate scaling applied to the output
-        residual, so no second factor of ``alpha`` is applied here.
-        """
-        State = BigClass.State
-        Strctr = BigClass.Strctr
-        if not hasattr(Strctr, 'DM_dagger'):
-            raise AttributeError(
-                "Adjoint_pressure requires Strctr.build_inverse_incidence() during setup"
+    def calc_adjoint_output_pressure(self, Strctr: "Network_Structure") -> None:
+        """Set the output-only pressure imposed during the adjoint intermediate state."""
+        loss = np.asarray(self.loss, dtype=float)
+        output_residual = loss[0] if loss.ndim > 1 else loss
+        output_residual = output_residual.reshape(-1)
+        if output_residual.size != Strctr.Nout:
+            raise ValueError(
+                f"Adjoint output residual has {output_residual.size} entries; expected {Strctr.Nout}"
             )
-        if not State.p_in_t or State.p_adjoint.size < Strctr.NN:
-            raise ValueError("Forward and adjoint pressure states must be solved before the update values")
-
-        forward_drop: NDArray[np.float_] = np.matmul(Strctr.DM, State.p_in_t[-1])
-        adjoint_drop: NDArray[np.float_] = np.matmul(
-            Strctr.DM, State.p_adjoint[:Strctr.NN]
-        ).ravel()
-        self.adjoint_edge_update_vec: NDArray[np.float_] = forward_drop * adjoint_drop
-        self.update_vec = np.matmul(Strctr.DM_dagger, self.adjoint_edge_update_vec)
-        self.update_vec_in_t[State.t - 1] = self.update_vec
+        self.adjoint_output_pressure = self.alpha * output_residual

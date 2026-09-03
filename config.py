@@ -27,8 +27,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 4
-    Nout: int = 1
+    Nin: int = 1
+    Nout: int = 4
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -75,14 +75,16 @@ class SupervisorConfig:
     dataset_type: str = "random uniform"
     # dataset_type: str = "random uniform"
     # training_scheme: str = "Adaline"
-    training_scheme: str = "Adjoint_pressure_noIn"
+    # training_scheme: str = "Adjoint_pressure_noIn"
+    # training_scheme: str = "Adjoint_current_noIn"
+    training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 800 * batch_size
+    iterations: int = 1200 * batch_size
     # alpha: float = 0.028
-    alpha: float = 0.55
-    # alpha_scale_nonlin: float = 62.0 * batch_size**(1/2.7)
+    alpha: float = 0.28
+    alpha_scale_nonlin: float = 25.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
-    alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
+    # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
     use_p_tag: bool = False
     stay_sample: int = 1
     # normalize_loss: bool = R_UPDATE in {
@@ -93,7 +95,7 @@ class SupervisorConfig:
     normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal: bool = True
+    anneal: bool = False
     T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False

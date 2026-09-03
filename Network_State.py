@@ -239,7 +239,7 @@ class Network_State:
             nodeData_tuple = (
                 np.array([], dtype=float),
                 np.array([], dtype=float),
-                np.asarray(BigClass.Sprvsr.update_vec, dtype=float)[BigClass.Strctr.output_nodes_arr],
+                np.asarray(BigClass.Sprvsr.adjoint_output_pressure, dtype=float),
                 np.array([], dtype=float),
             )
         elif modality == 'update':
@@ -254,9 +254,8 @@ class Network_State:
             elif training_scheme == 'Adjoint_pressure':
                 update_vec = np.asarray(BigClass.Sprvsr.update_vec, dtype=float).reshape(-1)
                 if update_vec.size != BigClass.Strctr.NN:
-                    raise NotImplementedError(
-                        "Adjoint_pressure update values are not defined yet. Implement "
-                        "Supervisor.calc_adjoint_pressure_update_values with an update_vec sized NN."
+                    raise ValueError(
+                        "Adjoint_pressure calc_update_vals_vec must produce an update_vec sized NN"
                     )
                 latest_update_values = (update_vec,)
             else:
