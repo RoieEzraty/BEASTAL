@@ -35,6 +35,8 @@ class Network_State:
         self.t: int = 0  # number of calculated training updates, including updates buffered in a batch
         self.p: NDArray[np.float_] = array([])  # pressure
         self.u: NDArray[np.float_] = array([])  # flow rate
+        self.p_adjoint: NDArray[np.float_] = array([])  # latest Adjoint_pressure state
+        self.u_adjoint: NDArray[np.float_] = array([])  # latest Adjoint_pressure edge flows
         # "measurement" modality
         self.inter_in_t: List[NDArray[np.float_]] = []  # pressure at intermediate nodes (not input/output) in time
         self.output_in_t: List[NDArray[np.float_]] = []  # pressure at outputs in time
@@ -199,7 +201,8 @@ class Network_State:
         modality - string stating the modality type: "measure" for no constraint on outputs
                                                      "measure_for_mean" for outputs of mean of Iris class
                                                      "measure_for_accuracy" for outputs of mean of Iris class
-                                                     "update" for constrained outputs as well
+                                                     "adjoint" for the current-driven intermediate state
+                                                     "update" for the resistance-evolving boundary conditions
         noise_to_extra - optional bool, whether to add noise to p on extra nodes
         access_inters  - optional bool, whether to change pressure in inter nodes
 
@@ -211,6 +214,7 @@ class Network_State:
         # Select nodes and pressure data based on modality
         nodes_tuple: functions.NodeArrays
         nodeData_tuple: functions.NodeDataArrays
+        node_sources: Optional[NDArray[np.float_]] = None
         if modality in {'measure', 'measure_for_mean', 'measure_for_accuracy'}:
             if noise_to_extra:
                 nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
@@ -220,17 +224,49 @@ class Network_State:
                 nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
                                BigClass.Strctr.ground_nodes_arr)
                 nodeData_tuple = (self.input_drawn, self.extraInput)
-        elif modality == 'update':
-            # Access inter nodes if needed
-            inters = BigClass.Sprvsr.access_interNodes or access_inters
-
-            latest_update_values = (
-                BigClass.Sprvsr.input_update_in_t[-1],
-                BigClass.Sprvsr.extraInput_update_in_t[-1],
-                BigClass.Sprvsr.output_update_in_t[-1],
-                BigClass.Sprvsr.extraOutput_update_in_t[-1],
-                BigClass.Sprvsr.inter_update_in_t[-1],
+        elif modality == 'adjoint':
+            if BigClass.Sprvsr.training_scheme != 'Adjoint_pressure':
+                raise ValueError(
+                    "The 'adjoint' modality is only used by training_scheme='Adjoint_pressure'"
+                )
+            nodes_tuple = (
+                np.array([], dtype=int),
+                np.array([], dtype=int),
+                BigClass.Strctr.ground_nodes_arr,
+                BigClass.Strctr.output_nodes_arr,
+                np.array([], dtype=int),
             )
+            nodeData_tuple = (
+                np.array([], dtype=float),
+                np.array([], dtype=float),
+                np.asarray(BigClass.Sprvsr.update_vec, dtype=float)[BigClass.Strctr.output_nodes_arr],
+                np.array([], dtype=float),
+            )
+        elif modality == 'update':
+            training_scheme = BigClass.Sprvsr.training_scheme
+            no_input_schemes = {'Adjoint_current_noIn', 'Adjoint_pressure_noIn'}
+            inters = ((BigClass.Sprvsr.access_interNodes or access_inters)
+                      and training_scheme not in no_input_schemes
+                      and training_scheme != 'Adjoint_pressure')
+
+            if training_scheme in no_input_schemes:
+                latest_update_values = (np.asarray(BigClass.Sprvsr.update_vec, dtype=float),)
+            elif training_scheme == 'Adjoint_pressure':
+                update_vec = np.asarray(BigClass.Sprvsr.update_vec, dtype=float).reshape(-1)
+                if update_vec.size != BigClass.Strctr.NN:
+                    raise NotImplementedError(
+                        "Adjoint_pressure update values are not defined yet. Implement "
+                        "Supervisor.calc_adjoint_pressure_update_values with an update_vec sized NN."
+                    )
+                latest_update_values = (update_vec,)
+            else:
+                latest_update_values = (
+                    BigClass.Sprvsr.input_update_in_t[-1],
+                    BigClass.Sprvsr.extraInput_update_in_t[-1],
+                    BigClass.Sprvsr.output_update_in_t[-1],
+                    BigClass.Sprvsr.extraOutput_update_in_t[-1],
+                    BigClass.Sprvsr.inter_update_in_t[-1],
+                )
             if self._last_update_snapshot_t != self.t:
                 self._update_value_snapshots.append(tuple(
                     np.asarray(values, dtype=float).copy()
@@ -249,12 +285,40 @@ class Network_State:
             else:
                 update_values = latest_update_values
 
-            nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
-                           BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
-                           BigClass.Strctr.extraOutput_nodes_arr)
-            nodeData_tuple = update_values[:4]
+            if training_scheme == 'Adjoint_current_noIn':
+                nodes_tuple = (
+                    np.array([], dtype=int), np.array([], dtype=int),
+                    BigClass.Strctr.ground_nodes_arr,
+                )
+                nodeData_tuple = (np.array([], dtype=float), np.array([], dtype=float))
+                node_sources = update_values[0]
+            elif training_scheme == 'Adjoint_pressure_noIn':
+                nodes_tuple = (
+                    np.array([], dtype=int), np.array([], dtype=int),
+                    BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
+                    np.array([], dtype=int),
+                )
+                nodeData_tuple = (
+                    np.array([], dtype=float), np.array([], dtype=float),
+                    update_values[0][BigClass.Strctr.output_nodes_arr], np.array([], dtype=float),
+                )
+            elif training_scheme == 'Adjoint_pressure':
+                nodes_tuple = (
+                    BigClass.Strctr.input_nodes_arr, np.array([], dtype=int),
+                    BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
+                    np.array([], dtype=int),
+                )
+                nodeData_tuple = (
+                    update_values[0][BigClass.Strctr.input_nodes_arr], np.array([], dtype=float),
+                    update_values[0][BigClass.Strctr.output_nodes_arr], np.array([], dtype=float),
+                )
+            else:
+                nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
+                               BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
+                               BigClass.Strctr.extraOutput_nodes_arr)
+                nodeData_tuple = update_values[:4]
 
-            if inters:  # add inter nodes if needed
+            if inters:
                 nodes_tuple += (BigClass.Strctr.inter_nodes_arr,)
                 nodeData_tuple += (update_values[4],)
         else:
@@ -262,14 +326,20 @@ class Network_State:
 
         # Constraint matrix given constrained nodes and values
         self.CstrTuple: Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]]
-        self.CstrTuple = functions.setup_constraints_given_pin(nodes_tuple, nodeData_tuple, BigClass.Strctr.NN,
-                                                               BigClass.Strctr.EI, BigClass.Strctr.EJ)
+        self.CstrTuple = functions.setup_constraints_given_pin(
+            nodes_tuple, nodeData_tuple, BigClass.Strctr.NN,
+            BigClass.Strctr.EI, BigClass.Strctr.EJ,
+            node_sources=node_sources,
+        )
 
         # R to K
         self.K_vec: NDArray[np.float_]  # type hint conductivities
         self.K_vec = matrix_functions.K_from_R(self.R_in_t[-1])  # calculate conductivities
 
         self.p, self.u = solve.solve_flow(BigClass.Strctr, self.CstrTuple, self.K_vec)
+        if modality == 'adjoint':
+            self.p_adjoint = self.p.copy()
+            self.u_adjoint = self.u.copy()
 
         # add to State class variables
         if modality in {'measure', 'measure_for_mean', 'measure_for_accuracy'}:

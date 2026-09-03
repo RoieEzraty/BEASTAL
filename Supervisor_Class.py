@@ -337,7 +337,9 @@ class Supervisor:
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
-        if self.training_scheme in ['GD_like', 'Adaline']:
+        if self.training_scheme in [
+            'GD_like', 'Adaline', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn'
+        ]:
             delta = self.update_vec[BigClass.Strctr.output_nodes_arr]
         else:
             if self.use_p_tag:
@@ -390,7 +392,7 @@ class Supervisor:
             print('extraOutput_update_nxt', self.extraOutput_update_nxt)
 
     def calc_update_vals_vec(self, BigClass: "Big_Class") -> None:
-        """Calculate update-modality node values for Adaline-like or GD-like training."""
+        """Calculate update-modality node values or sources for gradient-based training."""
         State = BigClass.State
         in_nodes = copy.copy(BigClass.Strctr.input_nodes_arr)
         out_nodes = copy.copy(BigClass.Strctr.output_nodes_arr)
@@ -423,6 +425,15 @@ class Supervisor:
             if BigClass.Strctr.Ninter > 0:
                 for idx in BigClass.Strctr.inter_nodes_arr:
                     update_vec = np.insert(update_vec, idx, 0)
+        elif self.training_scheme in {
+            'Adjoint_pressure', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn'
+        }:
+            # For L = 1/2 ||y-y_des||^2, -dL/dy = y_des-y, which is
+            # exactly the sign convention used by self.loss. Alpha scales the
+            # imposed current or pressure and therefore the update magnitude.
+            L_vec = np.zeros(BigClass.Strctr.NN)
+            L_vec[out_nodes] = self.loss.ravel()
+            update_vec = self.alpha * L_vec
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
         self.update_vec = update_vec
@@ -433,3 +444,28 @@ class Supervisor:
                 f"expected 1 <= t <= {self.iterations}."
             )
         self.update_vec_in_t[update_index] = update_vec
+
+    def calc_adjoint_pressure_update_values(self, BigClass: "Big_Class") -> None:
+        """Calculate update pressures from forward and adjoint edge-pressure products.
+
+        Implements ``p_update = U_dagger [(x_j-y_i)
+        (x_j_adj-y_i_adj)]`` using the incidence matrix ``U = DM``. The adjoint
+        state already contains the learning-rate scaling applied to the output
+        residual, so no second factor of ``alpha`` is applied here.
+        """
+        State = BigClass.State
+        Strctr = BigClass.Strctr
+        if not hasattr(Strctr, 'DM_dagger'):
+            raise AttributeError(
+                "Adjoint_pressure requires Strctr.build_inverse_incidence() during setup"
+            )
+        if not State.p_in_t or State.p_adjoint.size < Strctr.NN:
+            raise ValueError("Forward and adjoint pressure states must be solved before the update values")
+
+        forward_drop: NDArray[np.float_] = np.matmul(Strctr.DM, State.p_in_t[-1])
+        adjoint_drop: NDArray[np.float_] = np.matmul(
+            Strctr.DM, State.p_adjoint[:Strctr.NN]
+        ).ravel()
+        self.adjoint_edge_update_vec: NDArray[np.float_] = forward_drop * adjoint_drop
+        self.update_vec = np.matmul(Strctr.DM_dagger, self.adjoint_edge_update_vec)
+        self.update_vec_in_t[State.t - 1] = self.update_vec

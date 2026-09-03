@@ -85,8 +85,10 @@ def setup_constraints_given_pin(nodes_tuple: NodeArrays,
                                 nodeData_tuple: NodeDataArrays,
                                 NN: int,
                                 EI: NDArray[np.int_],
-                                EJ: NDArray[np.int_]) -> Tuple[NDArray[np.float_], NDArray[np.float_],
-                                                               NDArray[np.float_]]:
+                                EJ: NDArray[np.int_],
+                                node_sources: Optional[FloatArray] = None
+                                ) -> Tuple[NDArray[np.float_], NDArray[np.float_],
+                                           NDArray[np.float_]]:
     """
     setup_constraints_given_pin sets up arrays of boundary condition on nodes,
     denoting node indices and assigned pressure values to each node,
@@ -101,6 +103,8 @@ def setup_constraints_given_pin(nodes_tuple: NodeArrays,
     NN             - int, total number of nodes in network
     EI             - array, node number on 1st side of all edges
     EJ             - array, node number on 2nd side of all edges
+    node_sources   - optional source/force/current at every node. These values enter the
+                     equilibrium equation and do not constrain the corresponding node values.
 
     outputs:
     Cstr_full - 2D array sized [Constraints, NN + 1] representing constraints on nodes and edges.
@@ -125,6 +129,11 @@ def setup_constraints_given_pin(nodes_tuple: NodeArrays,
     Cstr: NDArray[np.float_]  # type hint
     f: NDArray[np.float_]  # type hint
     Cstr_full, Cstr, f = matrix_functions.ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ)
+    if node_sources is not None:
+        sources = np.asarray(node_sources, dtype=float).reshape(-1)
+        if sources.size != NN:
+            raise ValueError(f"node_sources has {sources.size} entries; expected NN={NN}")
+        f[:NN, 0] = sources
     return Cstr_full, Cstr, f
 
 
