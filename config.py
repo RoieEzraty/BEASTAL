@@ -12,8 +12,8 @@ from numpy.typing import NDArray
 # Relevant to all
 # -----------------------------
 
-# R_UPDATE = "deltaR_propto_dp_nonlin"
-R_UPDATE = "deltaR_propto_dp"
+R_UPDATE = "deltaR_propto_dp_nonlin"
+# R_UPDATE = "deltaR_propto_dp"
 
 # -----------------------------
 # Networ Structure
@@ -81,7 +81,7 @@ class SupervisorConfig:
     batch_size: int = 1
     iterations: int = 1200 * batch_size
     # alpha: float = 0.028
-    alpha: float = 0.28
+    alpha: float = 0.08
     alpha_scale_nonlin: float = 25.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
     # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
@@ -91,11 +91,11 @@ class SupervisorConfig:
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    # normalize_loss = True
-    normalize_loss = False
+    normalize_loss = True
+    # normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal: bool = False
+    anneal: bool = True
     T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False

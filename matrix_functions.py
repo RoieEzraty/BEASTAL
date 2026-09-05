@@ -627,7 +627,7 @@ def grad_loss_FC(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_no
             x_j = p[np.where(DM[idx] == 1)]
             y_i = p[np.where(DM[idx] == -1)]
             loss_i = loss[0][output_idx[0]]
-        grad_loss_ij = -(y_i-x_j)*loss_i
+        grad_loss_ij = -(y_i-x_j)*loss_i  # loss w.r.t Resistances has a minus sign.
         grad_loss_vec[idx] = grad_loss_ij
     return grad_loss_vec
 

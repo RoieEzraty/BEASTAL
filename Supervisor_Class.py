@@ -254,7 +254,7 @@ class Supervisor:
         input_update = self.input_update_in_t[-1]
         input_drawn = self.input_drawn_in_t[-1]
         if self.training_scheme in ['GD_like', 'Adaline']:
-            delta = -self.update_vec[BigClass.Strctr.input_nodes_arr]
+            delta = self.update_vec[BigClass.Strctr.input_nodes_arr]
         else:
             if self.use_p_tag:
                 input_drawn_prev = self.input_drawn_in_t[-2]
@@ -262,17 +262,17 @@ class Supervisor:
                 input_drawn_prev = np.zeros([BigClass.Strctr.Nin])
                 loss = np.array([copy.copy(loss[0]), np.zeros([BigClass.Strctr.Nout])])
             if self.normalize_loss:
-                delta = (input_drawn-input_drawn_prev) * self.alpha * \
+                delta = -(input_drawn-input_drawn_prev) * self.alpha * \
                     (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
             else:
-                delta = (input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
+                delta = -(input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
-            self.input_update_nxt = input_update - delta
+            self.input_update_nxt = input_update + delta
         elif R_update == 'beads':
             self.input_update_nxt = input_update + self.alpha * np.mean(np.abs(loss[0]))
         elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
-            self.input_update_nxt = -delta
+            self.input_update_nxt = delta
         elif R_update == 'grad_desc':
             self.input_update_nxt = input_update
         if functions.reset_update(self.input_update_nxt, BigClass.Variabs.reset_thresh_b,
@@ -418,7 +418,7 @@ class Supervisor:
             self.grad_loss_vec = grad_loss_vec
             grad_loss_vec_norm = grad_loss_vec / np.linalg.norm(grad_loss_vec)
             self.grad_loss_vec_norm = grad_loss_vec_norm
-            update_vec = -self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss else grad_loss_vec)
+            update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss else grad_loss_vec)
             if BigClass.Strctr.Ninter > 0:
                 for idx in BigClass.Strctr.inter_nodes_arr:
                     update_vec = np.insert(update_vec, idx, 0)

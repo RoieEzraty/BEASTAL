@@ -433,6 +433,13 @@ class Network_State:
                 else:
                     R_nxt = self.R_in_t[-1] + delta_R
             self.R_in_t.append(np.clip(R_nxt, 1e-12, None))
+        elif BigClass.Variabs.R_update == 'deltaR_NTC':  # imitate NTC thermistor, delta_R propto -dp*Q
+            C_T = BigClass.Variabs.C_T  # thermal heat capacity
+            G_T = BigClass.Variabs.G_T  # thermal dissipation factor
+            T = self.T_from_R(self.R_in_t[-1])
+            T_room = BigClass.Variabs.T_room  # room temperature
+            dRdt = self.dRdt_from_R(self.R_in_t[-1])
+            delta_R = dRdt * 1/C_T * (delta_p**2/self.R_in_t[-1] - G_T * (T-T_room))
         elif BigClass.Variabs.R_update == 'grad_desc':
             if delta_K is None:
                 raise ValueError("delta_K must be supplied for gradient-descent resistance updates")
@@ -536,8 +543,6 @@ class Network_State:
             self.GD_cost: float = cost
         return cost
 
-
-
     def calc_Power_norm(self, BigClass: "Big_Class") -> None:
         self.Power_norm = statistics.power_dissip_norm(self.u, self.R_in_t[-1], self.input_drawn)
         self.Power_norm_in_t.append(self.Power_norm)
@@ -575,3 +580,22 @@ class Network_State:
         u_out: flow from all output nodes np.ndarray sized [Nout,]
         """
         self.u_out = np.sum(self.u[BigClass.Strctr.output_edges]*BigClass.Strctr.output_edge_directions)
+
+    #------------------------------
+    # NTC thermistor functions
+    #------------------------------
+    def T_from_R(self, R):
+        """
+        Calculate temperature from resistance using the Steinhart-Hart equation.
+
+        inputs:
+        R: Resistance value (or array of values)
+
+        outputs:
+        T: Temperature in Kelvin corresponding to the given resistance
+        """
+        R_25 = BigClass.Variabs.R_25  # resistance at 25°C
+        B = BigClass.Variabs.B  # B coefficient
+        T_room = BigClass.Variabs.T_room  # room temperature in Kelvin
+        T = ???
+        return T
