@@ -42,6 +42,7 @@ class Network_State:
         self.output_in_t: List[NDArray[np.float_]] = []  # pressure at outputs in time
         self.p_in_t: List[NDArray[np.float_]] = []  # measured pressures on all physical nodes in time
         self.extraOutput_in_t: List[NDArray[np.float_]] = []  # pressure at additional outputs, loss not calculated
+        self.T_in_t: List[NDArray[np.float_]] = []  # NTC edge temperatures in time
         Strctr = BigClass.Strctr
         BigClass.Sprvsr.reset_training_history(Strctr)
         self._update_value_snapshots: List[Tuple[NDArray[np.float_], ...]] = []
@@ -60,10 +61,17 @@ class Network_State:
         inputs:
         BigClass - class instance including User_Variables, Network_Structure instances, etc.
         R_vec_i  - optional initial resistances, array of size [NE,]
+
+        For the NTC rule, all edges start at the resistance corresponding to
+        ``initial_temperature`` below; supplied resistance and noise are ignored.
         """
         self._update_value_snapshots.clear()
         self._last_update_snapshot_t = None
-        if R_vec_i is not None:  # user speficied initial resistances
+        if BigClass.Variabs.R_update == "deltaR_NTC":
+            initial_temperature = 1.0 * BigClass.Variabs.T_room
+            initial_resistance = self.R_from_T(BigClass, initial_temperature)
+            self.R_in_t = [np.full(BigClass.Strctr.NE, initial_resistance, dtype=float)]
+        elif R_vec_i is not None:  # user speficied initial resistances
             if np.size(R_vec_i) != BigClass.Strctr.NE:
                 print('R_vec_i has wrong size, initializing all ones')
                 self.R_in_t: List[NDArray[np.float_]] = [np.ones((BigClass.Strctr.NE), dtype=float)]
@@ -75,8 +83,15 @@ class Network_State:
             else:
                 self.R_in_t = [np.ones(BigClass.Strctr.NE, dtype=float)]
 
-        if add_noise:
+        if add_noise and BigClass.Variabs.R_update != "deltaR_NTC":
             self.R_in_t[0] += np.random.normal(loc=0.0, scale=add_noise, size=BigClass.Strctr.NE)
+
+        if BigClass.Variabs.R_update == "deltaR_NTC":
+            self.T_in_t = [
+                np.asarray(self.T_from_R(BigClass, self.R_in_t[0]), dtype=float).copy()
+            ]
+        else:
+            self.T_in_t = []
 
         # self.R_in_t[0] = 10*self.R_in_t[0]
         # resistances for bead net as if w/out beads
@@ -379,6 +394,8 @@ class Network_State:
         """
         if self.t % BigClass.Sprvsr.batch_size:
             self.R_in_t.append(self.R_in_t[-1].copy())
+            if BigClass.Variabs.R_update == "deltaR_NTC":
+                self.T_in_t.append(self.T_in_t[-1].copy())
             return
 
         R_vec: NDArray[np.float_] = self.R_in_t[-1]
@@ -436,10 +453,19 @@ class Network_State:
         elif BigClass.Variabs.R_update == 'deltaR_NTC':  # imitate NTC thermistor, delta_R propto -dp*Q
             C_T = BigClass.Variabs.C_T  # thermal heat capacity
             G_T = BigClass.Variabs.G_T  # thermal dissipation factor
-            T = self.T_from_R(self.R_in_t[-1])
             T_room = BigClass.Variabs.T_room  # room temperature
-            dRdt = self.dRdt_from_R(self.R_in_t[-1])
-            delta_R = dRdt * 1/C_T * (delta_p**2/self.R_in_t[-1] - G_T * (T-T_room))
+            T = np.maximum(self.T_from_R(BigClass, R_vec), T_room)
+            dRdT = self.dRdT_from_R(BigClass, R_vec, T)
+            delta_R = dRdT/C_T * (delta_p**2/R_vec - G_T * (T-T_room))
+            numerical_T_max = T_room / np.sqrt(np.finfo(float).eps)
+            finite_temperature_R_min = self.R_from_T(BigClass, numerical_T_max)
+            R_nxt = np.clip(
+                R_vec + delta_R,
+                finite_temperature_R_min,
+                BigClass.Variabs.R_25,
+            )
+            self.R_in_t.append(R_nxt)
+            self.T_in_t.append(self.T_from_R(BigClass, R_nxt))
         elif BigClass.Variabs.R_update == 'grad_desc':
             if delta_K is None:
                 raise ValueError("delta_K must be supplied for gradient-descent resistance updates")
@@ -584,7 +610,9 @@ class Network_State:
     #------------------------------
     # NTC thermistor functions
     #------------------------------
-    def T_from_R(self, R):
+    def T_from_R(
+        self, BigClass: "Big_Class", R: Union[float, NDArray[np.float_]]
+    ) -> NDArray[np.float_]:
         """
         Calculate temperature from resistance using the Steinhart-Hart equation.
 
@@ -597,5 +625,31 @@ class Network_State:
         R_25 = BigClass.Variabs.R_25  # resistance at 25°C
         B = BigClass.Variabs.B  # B coefficient
         T_room = BigClass.Variabs.T_room  # room temperature in Kelvin
-        T = ???
+        T = (1/T_room + 1/B * np.log(R/R_25))**(-1)
         return T
+
+    def R_from_T(self, BigClass: "Big_Class", T: Union[float, NDArray[np.float_]]) -> NDArray[np.float_]:
+        """Return NTC resistance corresponding to temperature ``T`` in Kelvin."""
+        T_values = np.asarray(T, dtype=float)
+        R_25 = BigClass.Variabs.R_25
+        B = BigClass.Variabs.B
+        T_room = BigClass.Variabs.T_room
+        return R_25 * np.exp(B * (1/T_values - 1/T_room))
+
+    def dRdT_from_R(
+        self,
+        BigClass: "Big_Class",
+        R: Union[float, NDArray[np.float_]],
+        T: Union[float, NDArray[np.float_]],
+    ) -> NDArray[np.float_]:
+        """
+        Calculate the NTC resistance derivative with respect to temperature.
+
+        inputs:
+        R: Resistance value (or array of values)
+        T: Temperature in Kelvin corresponding to the given resistance
+
+        outputs:
+        dRdT: Rate of change of resistance with respect to temperature
+        """
+        return -BigClass.Variabs.B / T**2 * R

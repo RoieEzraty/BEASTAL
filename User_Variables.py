@@ -23,6 +23,12 @@ class User_Variables:
 
         if self.R_update in {"deltaR_propto_dp_decay", "deltaR_propto_dp_nonlin_decay"}:
             self.decay: float = variables.decay_R
+        elif self.R_update == "deltaR_NTC":
+            self.C_T: float = variables.C_T
+            self.G_T: float = variables.G_T
+            self.T_room: float = variables.T_room
+            self.R_25: float = variables.R_25
+            self.B: float = variables.B
         if variables.hysteresis:
             self.hysteresis: bool = True
             self.hyst_thresh: float = variables.hysteresis

@@ -12,7 +12,8 @@ from numpy.typing import NDArray
 # Relevant to all
 # -----------------------------
 
-R_UPDATE = "deltaR_propto_dp_nonlin"
+R_UPDATE = "deltaR_NTC"
+# R_UPDATE = "deltaR_propto_dp_nonlin"
 # R_UPDATE = "deltaR_propto_dp"
 
 # -----------------------------
@@ -28,7 +29,7 @@ class StructureConfig:
     net_height: int = 16
     net_length: int = 16
     Nin: int = 1
-    Nout: int = 4
+    Nout: int = 2
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -50,6 +51,13 @@ class VariablesConfig:
     hysteresis: float = 0.0
     decay_R: float = 2e-3
     normalize_step: bool = False
+
+    # NTC variables
+    C_T: float = 35 * 1e-3
+    G_T: float = 3.5 * 1e-3 
+    B: float = 3500  # [K]
+    R_25: float = 1000.0  # [Ohm] Resistance at 25°C
+    T_room: float = 298.15
 
 # -----------------------------
 # Networkx python instance
@@ -73,20 +81,20 @@ class SupervisorConfig:
     task_type: str = "Regression"
     # dataset_type: str = "alternating ones"
     dataset_type: str = "random uniform"
-    # dataset_type: str = "random uniform"
-    # training_scheme: str = "Adaline"
+    training_scheme: str = "Adaline"
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
-    training_scheme: str = "Adjoint_pressure"
+    # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
     iterations: int = 1200 * batch_size
-    # alpha: float = 0.028
-    alpha: float = 0.08
+    # alpha: float = 0.028  # deltaR_propto_deltap
+    # alpha: float = 0.08   # Adjoint
+    alpha = 11.4  # deltaR_NTC
     alpha_scale_nonlin: float = 25.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
     # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
     use_p_tag: bool = False
-    stay_sample: int = 1
+    stay_sample: int = 40
     # normalize_loss: bool = R_UPDATE in {
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
@@ -95,7 +103,7 @@ class SupervisorConfig:
     # normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal: bool = True
+    anneal: bool = False
     T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False
