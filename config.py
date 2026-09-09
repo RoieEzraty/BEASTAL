@@ -29,7 +29,7 @@ class StructureConfig:
     net_height: int = 16
     net_length: int = 16
     Nin: int = 1
-    Nout: int = 2
+    Nout: int = 4
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -54,7 +54,7 @@ class VariablesConfig:
 
     # NTC variables
     C_T: float = 35 * 1e-3
-    G_T: float = 3.5 * 1e-3 
+    G_T: float = 3.5 * 1e-3  
     B: float = 3500  # [K]
     R_25: float = 1000.0  # [Ohm] Resistance at 25°C
     T_room: float = 298.15
@@ -81,20 +81,29 @@ class SupervisorConfig:
     task_type: str = "Regression"
     # dataset_type: str = "alternating ones"
     dataset_type: str = "random uniform"
-    training_scheme: str = "Adaline"
+    if R_UPDATE == "deltaR_NTC":
+        training_scheme: str = "BEASTAL_NTC"
+    else:
+        training_scheme: str = "Adaline"
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 1200 * batch_size
-    # alpha: float = 0.028  # deltaR_propto_deltap
-    # alpha: float = 0.08   # Adjoint
-    alpha = 11.4  # deltaR_NTC
+    iterations: int = 200 * batch_size
+    
+    if R_UPDATE == "deltaR_NTC":
+        alpha = 22  # deltaR_NTC
+    else:
+        if training_scheme == "Adaline":
+            alpha: float = 0.028  # deltaR_propto_deltap
+        else:
+            alpha: float = 0.08   # Adjoint
+    beta = 6
     alpha_scale_nonlin: float = 25.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
     # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
     use_p_tag: bool = False
-    stay_sample: int = 40
+    stay_sample: int = 1
     # normalize_loss: bool = R_UPDATE in {
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",

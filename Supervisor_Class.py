@@ -54,6 +54,7 @@ class Supervisor:
         self.print_every: int = sprvsr.print_every
         self.calculate_cosine_sim: bool = sprvsr.calculate_cosine_sim
         self.alpha_scale_nonlin: float = sprvsr.alpha_scale_nonlin
+        self.beta: float = sprvsr.beta
         self.loss_fn = functions.loss_fn_2samples if self.use_p_tag else functions.loss_fn_1sample
         self.lam: float = -80.0**-1
         self.dataset: NDArray[np.float_]
@@ -83,9 +84,7 @@ class Supervisor:
         self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
         self.adjoint_output_pressure: NDArray[np.float_] = np.zeros(Strctr.Nout, dtype=float)
         self.update_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
-        self.update_vec_in_t: NDArray[np.float_] = np.zeros(
-            (self.iterations, Strctr.NN), dtype=float
-        )
+        self.update_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NN), dtype=float)
 
     def assign_alpha(self, alpha: float, Variabs: "User_Variables") -> None:
         """Assign the learning rate, including nonlinear-rule scaling."""
@@ -108,14 +107,10 @@ class Supervisor:
             else:
                 M_values = M_values[:required_size]
         if config.Sprvsr.normalize_M:
-            M_values = functions.normalize_M(
-                M_values, config.Sprvsr.normalize, Strctr.Nin, Strctr.Nout
-            )
+            M_values = functions.normalize_M(M_values, config.Sprvsr.normalize, Strctr.Nin, Strctr.Nout)
         if np.size(M_values) != required_size:
-            raise ValueError(
-                f"M has {np.size(M_values)} values; expected {required_size} "
-                f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}."
-            )
+            raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
+                             f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}.")
         self.M: NDArray[np.float_] = M_values.reshape(Strctr.Nout, Strctr.Nin)
 
     def create_dataset_and_targets(self, config: ExperimentConfig, Strctr: "Network_Structure",
@@ -128,9 +123,7 @@ class Supervisor:
             if Variabs.R_update == "beads":
                 self.dataset = np.ones((self.iterations, Strctr.Nin))
             elif self.dataset_type == "alternating ones":
-                self.dataset = np.tile(
-                    np.eye(Strctr.Nin), (int(self.iterations / Strctr.Nin), 1)
-                )
+                self.dataset = np.tile(np.eye(Strctr.Nin), (int(self.iterations / Strctr.Nin), 1))
             else:
                 self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations, Strctr.Nin))
             self.targets = self.dataset @ self.M.T
@@ -151,10 +144,8 @@ class Supervisor:
         encoder = OneHotEncoder(sparse_output=False, categories="auto")
         self.targets = encoder.fit_transform(iris_target.reshape(-1, 1))
         if train_size:
-            split_data = train_test_split(
-                self.dataset, self.targets, train_size=train_size, random_state=random_state,
-                stratify=iris_target
-            )
+            split_data = train_test_split(self.dataset, self.targets, train_size=train_size, random_state=random_state,
+                                          stratify=iris_target)
             self.X_train = np.asarray(split_data[0], dtype=float)
             self.X_test = np.asarray(split_data[1], dtype=float)
             self.y_train = np.asarray(split_data[2], dtype=float)
@@ -165,10 +156,7 @@ class Supervisor:
             self.y_train = np.asarray(shuffle(copy.copy(self.targets), random_state=random_state), dtype=float)
             self.y_test = np.asarray(shuffle(copy.copy(self.targets), random_state=random_state), dtype=float)
         y_train_decoded = np.argmax(self.y_train, axis=1)
-        self.means = np.array([
-            np.mean(self.X_train[y_train_decoded == class_index], axis=0)
-            for class_index in range(3)
-        ])
+        self.means = np.array([np.mean(self.X_train[y_train_decoded == class_index], axis=0) for class_index in range(3)])
 
     def create_noise_for_extras(self, Strctr: "Network_Structure",
                                 Variabs: "User_Variables") -> None:
@@ -192,20 +180,14 @@ class Supervisor:
         """Calculate and record the task loss for the current measurement."""
         if self.use_p_tag:
             if self.include_Power:
-                self.loss = functions.loss_fn_2samples(
-                    State.output, State.output_in_t[-2], State.desired, self.desired_in_t[-2],
-                    State.Power_norm, State.Power_norm_in_t[-2], self.lam
-                )
+                self.loss = functions.loss_fn_2samples(State.output, State.output_in_t[-2], State.desired, self.desired_in_t[-2],
+                                                       State.Power_norm, State.Power_norm_in_t[-2], self.lam)
             else:
-                self.loss = functions.loss_fn_2samples(
-                    State.output, State.output_in_t[-2], State.desired, self.desired_in_t[-2]
-                )
+                self.loss = functions.loss_fn_2samples(State.output, State.output_in_t[-2], State.desired, self.desired_in_t[-2])
         elif self.include_Power:
             print('Power_norm', State.Power_norm)
             print('lam', self.lam)
-            self.loss = functions.loss_fn_1sample(
-                State.output, State.desired, State.Power_norm, self.lam
-            )
+            self.loss = functions.loss_fn_1sample(State.output, State.desired, State.Power_norm, self.lam)
         else:
             self.loss = functions.loss_fn_1sample(State.output, State.desired)
         self.loss_in_t.append(self.loss)
@@ -221,10 +203,8 @@ class Supervisor:
                  Strctr.ground_nodes_arr)
         initial_outputs = []
         for input_values in self.X_train[:sample_count]:
-            constraints = functions.setup_constraints_given_pin(
-                nodes, (input_values, self.extraInput_update_in_t[0]),
-                Strctr.NN, Strctr.EI, Strctr.EJ
-            )
+            constraints = functions.setup_constraints_given_pin(nodes, (input_values, self.extraInput_update_in_t[0]),
+                                                                Strctr.NN, Strctr.EI, Strctr.EJ)
             pressures, _ = solve.solve_flow(Strctr, constraints, initial_K)
             initial_outputs.append(pressures[Strctr.output_nodes_arr].ravel())
         desired = self.y_train[:sample_count]
@@ -253,7 +233,7 @@ class Supervisor:
         loss = self.loss_in_t[-1]
         input_update = self.input_update_in_t[-1]
         input_drawn = self.input_drawn_in_t[-1]
-        if self.training_scheme in ['GD_like', 'Adaline']:
+        if self.training_scheme in ['GD_like', 'Adaline', 'BEASTAL_NTC']:
             delta = self.update_vec[BigClass.Strctr.input_nodes_arr]
         else:
             if self.use_p_tag:
@@ -262,8 +242,7 @@ class Supervisor:
                 input_drawn_prev = np.zeros([BigClass.Strctr.Nin])
                 loss = np.array([copy.copy(loss[0]), np.zeros([BigClass.Strctr.Nout])])
             if self.normalize_loss:
-                delta = -(input_drawn-input_drawn_prev) * self.alpha * \
-                    (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
+                delta = -(input_drawn-input_drawn_prev) * self.alpha * (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
             else:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
@@ -276,8 +255,7 @@ class Supervisor:
             self.input_update_nxt = delta
         elif R_update == 'grad_desc':
             self.input_update_nxt = input_update
-        if functions.reset_update(self.input_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
+        if functions.reset_update(self.input_update_nxt, BigClass.Variabs.reset_thresh_b, BigClass.Variabs.reset_thresh_s):
             self.input_update_nxt = self.input_update_in_t[0]
         self.input_update_in_t.append(self.input_update_nxt)
         if not self.supress_prints:
@@ -296,8 +274,7 @@ class Supervisor:
             delta = extraInput * self.alpha * np.mean(loss[0])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraInput_update_nxt = extraInput_update - delta
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC',
-                          'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.extraInput_update_nxt = -delta
         elif R_update == 'grad_desc':
@@ -323,8 +300,7 @@ class Supervisor:
             delta = inter * self.alpha * np.mean(loss[0])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.inter_update_nxt = inter_update - delta
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC',
-                          'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.inter_update_nxt = -delta
         elif R_update == 'grad_desc':
@@ -343,7 +319,8 @@ class Supervisor:
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
         if self.training_scheme in [
-            'GD_like', 'Adaline', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn'
+            'GD_like', 'Adaline', 'BEASTAL_NTC',
+            'Adjoint_current_noIn', 'Adjoint_pressure_noIn'
         ]:
             delta = self.update_vec[BigClass.Strctr.output_nodes_arr]
         else:
@@ -359,14 +336,12 @@ class Supervisor:
             self.output_update_nxt = output_update + delta
         elif R_update == 'beads':
             self.output_update_nxt = output_update + self.alpha * np.mean(loss[0])
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC',
-                          'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.output_update_nxt = delta
         elif R_update == 'grad_desc':
             self.output_update_nxt = output_update
-        if functions.reset_update(self.output_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
+        if functions.reset_update(self.output_update_nxt, BigClass.Variabs.reset_thresh_b, BigClass.Variabs.reset_thresh_s):
             self.output_update_nxt = self.output_update_in_t[0]
         self.output_update_in_t.append(self.output_update_nxt)
         if not self.supress_prints:
@@ -385,14 +360,12 @@ class Supervisor:
             delta = State.extraOutput * self.alpha * np.mean(loss[0])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraOutput_update_nxt = extraOutput_update + delta
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC',
-                          'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.extraOutput_update_nxt = delta
         elif R_update == 'grad_desc':
             self.extraOutput_update_nxt = extraOutput_update
-        if functions.reset_update(self.extraOutput_update_nxt, BigClass.Variabs.reset_thresh_b,
-                                  BigClass.Variabs.reset_thresh_s):
+        if functions.reset_update(self.extraOutput_update_nxt, BigClass.Variabs.reset_thresh_b, BigClass.Variabs.reset_thresh_s):
             self.extraOutput_update_nxt = self.extraOutput_update_in_t[0]
         self.extraOutput_update_in_t.append(self.extraOutput_update_nxt)
         if not self.supress_prints:
@@ -419,7 +392,8 @@ class Supervisor:
         elif self.training_scheme == 'Adaline':
             Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
             p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
-            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr, self.loss)
+            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr,
+                                                          self.loss)
             self.grad_loss_vec = grad_loss_vec
             grad_loss_vec_norm = grad_loss_vec / np.linalg.norm(grad_loss_vec)
             self.grad_loss_vec_norm = grad_loss_vec_norm
@@ -430,13 +404,9 @@ class Supervisor:
         elif self.training_scheme == 'Adjoint_pressure':
             Strctr = BigClass.Strctr
             if not State.p_in_t or State.p_adjoint.size < Strctr.NN:
-                raise ValueError(
-                    "Adjoint_pressure requires measurement and adjoint solves before calc_update_vals_vec"
-                )
+                raise ValueError("Adjoint_pressure requires measurement and adjoint solves before calc_update_vals_vec")
             forward_drop: NDArray[np.float_] = np.matmul(Strctr.DM, State.p_in_t[-1])
-            adjoint_drop: NDArray[np.float_] = np.matmul(
-                Strctr.DM, State.p_adjoint[:Strctr.NN]
-            ).ravel()
+            adjoint_drop: NDArray[np.float_] = np.matmul(Strctr.DM, State.p_adjoint[:Strctr.NN]).ravel()
             self.adjoint_edge_update_vec: NDArray[np.float_] = forward_drop * adjoint_drop
             update_vec = np.matmul(Strctr.DM_dagger, self.adjoint_edge_update_vec)
         elif self.training_scheme in {'Adjoint_current_noIn', 'Adjoint_pressure_noIn'}:
@@ -446,15 +416,33 @@ class Supervisor:
             L_vec = np.zeros(BigClass.Strctr.NN)
             L_vec[out_nodes] = self.loss.ravel()
             update_vec = self.alpha * L_vec
+        elif self.training_scheme == 'BEASTAL_NTC':
+            Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
+            p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
+            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr, 
+                                                          self.loss)
+            self.grad_loss_vec = grad_loss_vec
+            grad_norm = np.linalg.norm(grad_loss_vec)
+            grad_loss_vec_norm = (grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec))
+            self.grad_loss_vec_norm = grad_loss_vec_norm
+            Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
+            # if np.any(Up_sqrd < 0):
+            #     raise ValueError("BEASTAL_NTC requires beta - alpha * grad_loss >= 0 on every edge")
+            Up = np.sqrt(np.maximum(Up_sqrd, 0))
+            print('Up', Up)
+            update_vec = np.matmul(Strctr.DM_dagger, Up)
+            if len(Strctr.ground_nodes_arr):
+                update_vec -= update_vec[Strctr.ground_nodes_arr[0]]
+            if BigClass.Strctr.Ninter > 0:
+                for idx in BigClass.Strctr.inter_nodes_arr:
+                    update_vec = np.insert(update_vec, idx, 0)
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
         self.update_vec = update_vec
         update_index = State.t - 1
         if not 0 <= update_index < self.iterations:
-            raise IndexError(
-                f"Cannot store update vector for t={State.t}; "
-                f"expected 1 <= t <= {self.iterations}."
-            )
+            raise IndexError(f"Cannot store update vector for t={State.t}; "
+                             f"expected 1 <= t <= {self.iterations}.")
         self.update_vec_in_t[update_index] = update_vec
 
     def calc_adjoint_output_pressure(self, Strctr: "Network_Structure") -> None:
@@ -463,7 +451,5 @@ class Supervisor:
         output_residual = loss[0] if loss.ndim > 1 else loss
         output_residual = output_residual.reshape(-1)
         if output_residual.size != Strctr.Nout:
-            raise ValueError(
-                f"Adjoint output residual has {output_residual.size} entries; expected {Strctr.Nout}"
-            )
+            raise ValueError(f"Adjoint output residual has {output_residual.size} entries; expected {Strctr.Nout}")
         self.adjoint_output_pressure = self.alpha * output_residual

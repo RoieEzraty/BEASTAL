@@ -68,7 +68,7 @@ class Network_State:
         self._update_value_snapshots.clear()
         self._last_update_snapshot_t = None
         if BigClass.Variabs.R_update == "deltaR_NTC":
-            initial_temperature = 1.0 * BigClass.Variabs.T_room
+            initial_temperature = 1.5 * BigClass.Variabs.T_room
             initial_resistance = self.R_from_T(BigClass, initial_temperature)
             self.R_in_t = [np.full(BigClass.Strctr.NE, initial_resistance, dtype=float)]
         elif R_vec_i is not None:  # user speficied initial resistances
