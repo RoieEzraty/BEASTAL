@@ -54,7 +54,9 @@ class Supervisor:
         self.print_every: int = sprvsr.print_every
         self.calculate_cosine_sim: bool = sprvsr.calculate_cosine_sim
         self.alpha_scale_nonlin: float = sprvsr.alpha_scale_nonlin
-        self.beta: float = sprvsr.beta
+        if Variabs.R_update == "deltaR_NTC":
+            self.initial_T: float = sprvsr.initial_T
+            self.beta: float = sprvsr.beta
         self.loss_fn = functions.loss_fn_2samples if self.use_p_tag else functions.loss_fn_1sample
         self.lam: float = -80.0**-1
         self.dataset: NDArray[np.float_]
@@ -249,8 +251,7 @@ class Supervisor:
             self.input_update_nxt = input_update + delta
         elif R_update == 'beads':
             self.input_update_nxt = input_update + self.alpha * np.mean(np.abs(loss[0]))
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC',
-                          'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.input_update_nxt = delta
         elif R_update == 'grad_desc':
@@ -274,7 +275,7 @@ class Supervisor:
             delta = extraInput * self.alpha * np.mean(loss[0])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraInput_update_nxt = extraInput_update - delta
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin', 'deltaR_NTC',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.extraInput_update_nxt = -delta
         elif R_update == 'grad_desc':
@@ -300,7 +301,7 @@ class Supervisor:
             delta = inter * self.alpha * np.mean(loss[0])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.inter_update_nxt = inter_update - delta
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin', 'deltaR_NTC',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.inter_update_nxt = -delta
         elif R_update == 'grad_desc':
@@ -318,10 +319,7 @@ class Supervisor:
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
-        if self.training_scheme in [
-            'GD_like', 'Adaline', 'BEASTAL_NTC',
-            'Adjoint_current_noIn', 'Adjoint_pressure_noIn'
-        ]:
+        if self.training_scheme in ['GD_like', 'Adaline', 'BEASTAL_NTC', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn']:
             delta = self.update_vec[BigClass.Strctr.output_nodes_arr]
         else:
             if self.use_p_tag:
@@ -336,7 +334,7 @@ class Supervisor:
             self.output_update_nxt = output_update + delta
         elif R_update == 'beads':
             self.output_update_nxt = output_update + self.alpha * np.mean(loss[0])
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin', 'deltaR_NTC',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
             self.output_update_nxt = delta
         elif R_update == 'grad_desc':
@@ -360,8 +358,8 @@ class Supervisor:
             delta = State.extraOutput * self.alpha * np.mean(loss[0])
         if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraOutput_update_nxt = extraOutput_update + delta
-        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_NTC', 'deltaR_propto_dp_nonlin',
-                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
+        elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
+                          'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay', 'deltaR_NTC']:
             self.extraOutput_update_nxt = delta
         elif R_update == 'grad_desc':
             self.extraOutput_update_nxt = extraOutput_update
@@ -425,7 +423,9 @@ class Supervisor:
             grad_norm = np.linalg.norm(grad_loss_vec)
             grad_loss_vec_norm = (grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec))
             self.grad_loss_vec_norm = grad_loss_vec_norm
-            Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
+            self.beta = (np.matmul(Strctr.DM, self.update_vec))**2
+            Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta  # constant
+            
             # if np.any(Up_sqrd < 0):
             #     raise ValueError("BEASTAL_NTC requires beta - alpha * grad_loss >= 0 on every edge")
             Up = np.sqrt(np.maximum(Up_sqrd, 0))

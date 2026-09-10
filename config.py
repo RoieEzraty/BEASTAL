@@ -29,7 +29,7 @@ class StructureConfig:
     net_height: int = 16
     net_length: int = 16
     Nin: int = 1
-    Nout: int = 4
+    Nout: int = 1
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -54,7 +54,8 @@ class VariablesConfig:
 
     # NTC variables
     C_T: float = 35 * 1e-3
-    G_T: float = 3.5 * 1e-3  
+    G_T: float = 3.5 * 1e-3   # physical one
+    # G_T: float = 3.5 * 1e-4   # small
     B: float = 3500  # [K]
     R_25: float = 1000.0  # [Ohm] Resistance at 25°C
     T_room: float = 298.15
@@ -89,16 +90,18 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 200 * batch_size
+    iterations: int = 400 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 22  # deltaR_NTC
+        alpha = 0.5  # deltaR_NTC
+        beta = 0  # added inside the update rule for constant shift
+        initial_T = 1.00 * VariablesConfig.T_room
     else:
         if training_scheme == "Adaline":
             alpha: float = 0.028  # deltaR_propto_deltap
         else:
             alpha: float = 0.08   # Adjoint
-    beta = 6
+    
     alpha_scale_nonlin: float = 25.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
     # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)

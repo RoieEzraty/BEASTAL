@@ -68,7 +68,7 @@ class Network_State:
         self._update_value_snapshots.clear()
         self._last_update_snapshot_t = None
         if BigClass.Variabs.R_update == "deltaR_NTC":
-            initial_temperature = 1.5 * BigClass.Variabs.T_room
+            initial_temperature = BigClass.Sprvsr.initial_T
             initial_resistance = self.R_from_T(BigClass, initial_temperature)
             self.R_in_t = [np.full(BigClass.Strctr.NE, initial_resistance, dtype=float)]
         elif R_vec_i is not None:  # user speficied initial resistances
@@ -454,7 +454,7 @@ class Network_State:
             C_T = BigClass.Variabs.C_T  # thermal heat capacity
             G_T = BigClass.Variabs.G_T  # thermal dissipation factor
             T_room = BigClass.Variabs.T_room  # room temperature
-            T = np.maximum(self.T_from_R(BigClass, R_vec), T_room)
+            T = np.maximum(self.T_from_R(BigClass, R_vec), 0)
             dRdT = self.dRdT_from_R(BigClass, R_vec, T)
             delta_R = dRdT/C_T * (delta_p**2/R_vec - G_T * (T-T_room))
             numerical_T_max = T_room / np.sqrt(np.finfo(float).eps)
