@@ -29,11 +29,12 @@ class StructureConfig:
     net_height: int = 16
     net_length: int = 16
     Nin: int = 1
-    Nout: int = 1
+    Nout: int = 2
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     add_ground: bool = True
+    frozen_ground: bool = True
     rand_seed: int = 35
 
 # -----------------------------
@@ -80,8 +81,8 @@ class SupervisorConfig:
     """Dataset and training-loop configuration."""
 
     task_type: str = "Regression"
-    # dataset_type: str = "alternating ones"
-    dataset_type: str = "random uniform"
+    dataset_type: str = "alternating ones"
+    # dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         training_scheme: str = "BEASTAL_NTC"
     else:
@@ -90,10 +91,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 400 * batch_size
+    iterations: int = 100 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 0.5  # deltaR_NTC
+        alpha = 10  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
@@ -113,7 +114,7 @@ class SupervisorConfig:
     # }
     normalize_loss = True
     # normalize_loss = False
-    supress_prints: bool = True
+    supress_prints: bool = False
     measure_accuracy_every: int = 15
     anneal: bool = False
     T_annealing: float = 0.75

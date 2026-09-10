@@ -194,6 +194,9 @@ class Supervisor:
             self.loss = functions.loss_fn_1sample(State.output, State.desired)
         self.loss_in_t.append(self.loss)
 
+        if not self.supress_prints:
+            print('loss=', self.loss)
+
     def calc_loss_scalar(self, State: "Network_State",
                          Strctr: "Network_Structure", sample_count: int = 16) -> None:
         """Calculate loss normalized by the initial network's first 16 samples."""
@@ -420,11 +423,15 @@ class Supervisor:
             grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr, 
                                                           self.loss)
             self.grad_loss_vec = grad_loss_vec
+            if Strctr.frozen_ground:
+                self.grad_loss_vec[BigClass.Strctr.ground_edges] = 0
             grad_norm = np.linalg.norm(grad_loss_vec)
             grad_loss_vec_norm = (grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec))
             self.grad_loss_vec_norm = grad_loss_vec_norm
             self.beta = (np.matmul(Strctr.DM, self.update_vec))**2
+            print('beta=', self.beta)
             Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta  # constant
+            print('Up_sqrd=', Up_sqrd)
             
             # if np.any(Up_sqrd < 0):
             #     raise ValueError("BEASTAL_NTC requires beta - alpha * grad_loss >= 0 on every edge")

@@ -29,6 +29,7 @@ class Network_Structure:
         self.Nin: int = config.Strctr.Nin
         self.Nout: int = config.Strctr.Nout
         self.Ninter: int = config.Strctr.Ninter
+        self.frozen_ground: bool = config.Strctr.frozen_ground
         if config.Sprvsr.task_type == "Iris_classification" and (self.Nin, self.Nout) != (4, 3):
             print("Iris classification requires Nin=4 and Nout=3; correcting the structure dimensions")
             self.Nin, self.Nout = 4, 3
@@ -87,6 +88,9 @@ class Network_Structure:
         else:
             raise ValueError(f"Unknown network type: {incidence_type}")
 
+        ground_at_start = np.isin(self.EI, self.ground_nodes_arr)
+        ground_at_end = np.isin(self.EJ, self.ground_nodes_arr)
+        self.ground_edges: NDArray[np.int_] = np.flatnonzero(ground_at_start | ground_at_end)
         output_at_start = np.isin(self.EI, self.output_nodes_arr)
         output_at_end = np.isin(self.EJ, self.output_nodes_arr)
         self.output_edges: NDArray[np.int_] = np.flatnonzero(output_at_start | output_at_end)

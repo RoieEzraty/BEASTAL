@@ -494,6 +494,10 @@ class Network_State:
 
         if len(self.R_in_t) != history_length + 1:
             raise ValueError(f"Unknown resistance update rule: {BigClass.Variabs.R_update}")
+        if BigClass.Strctr.frozen_ground and BigClass.Strctr.ground_edges.size:
+            self.R_in_t[-1][BigClass.Strctr.ground_edges] = R_vec[BigClass.Strctr.ground_edges]
+            if BigClass.Variabs.R_update == "deltaR_NTC":
+                self.T_in_t[-1][BigClass.Strctr.ground_edges] = self.T_in_t[-2][BigClass.Strctr.ground_edges]
         self.R_in_t[-1][self.R_in_t[-1] < 10**-12] = 10**-12
 
     def dK_grad_desc(self, Strctr: "Network_Structure", dK_step: float,
