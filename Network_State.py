@@ -459,11 +459,8 @@ class Network_State:
             delta_R = dRdT/C_T * (delta_p**2/R_vec - G_T * (T-T_room))
             numerical_T_max = T_room / np.sqrt(np.finfo(float).eps)
             finite_temperature_R_min = self.R_from_T(BigClass, numerical_T_max)
-            R_nxt = np.clip(
-                R_vec + delta_R,
-                finite_temperature_R_min,
-                BigClass.Variabs.R_25,
-            )
+            finite_temperature_R_max = self.R_from_T(BigClass, 0)
+            R_nxt = np.clip(R_vec + delta_R, finite_temperature_R_min, finite_temperature_R_max)
             self.R_in_t.append(R_nxt)
             self.T_in_t.append(self.T_from_R(BigClass, R_nxt))
         elif BigClass.Variabs.R_update == 'grad_desc':
