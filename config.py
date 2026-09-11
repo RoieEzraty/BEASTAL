@@ -91,10 +91,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 400 * batch_size
+    iterations: int = 90 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 1.0 # deltaR_NTC
+        alpha = 10 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
@@ -112,17 +112,17 @@ class SupervisorConfig:
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    normalize_loss = True
-    # normalize_loss = False
-    supress_prints: bool = False
+    # normalize_loss = True
+    normalize_loss = False
+    supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal: bool = True
+    anneal: bool = False
     T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False
     noise_to_extra: bool = False
     loss_type: str = "MSE"
-    print_every: int = 1
+    print_every: int = iterations
     calculate_cosine_sim: bool = False
 
     # M_values: NDArray[np.float_] = field(
