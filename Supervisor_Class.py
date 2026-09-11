@@ -430,16 +430,44 @@ class Supervisor:
                 self.grad_loss_vec[BigClass.Strctr.ground_edges] = 0
             grad_norm = np.linalg.norm(grad_loss_vec)
             grad_loss_vec_norm = (grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec))
-            # self.grad_loss_vec_norm = grad_loss_vec_norm
-            self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2
+            self.grad_loss_vec_norm = grad_loss_vec_norm
+
+            previous_drop = np.matmul(Strctr.DM, self.update_vec)  # forestall inertia by Codex Sep11
+            self.beta = previous_drop**2  # forestall inertia by Codex Sep11
+            # self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2  # good concoction Sep11
             # self.beta = 1.0*np.sign(grad_loss_vec_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
-            print('beta=', self.beta)
-            Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta  # constant
-            print('Up_sqrd=', Up_sqrd)
             
-            # if np.any(Up_sqrd < 0):
-            #     raise ValueError("BEASTAL_NTC requires beta - alpha * grad_loss >= 0 on every edge")
-            Up = np.sqrt(np.maximum(Up_sqrd, 0))
+            # # zero beta if loss changes sign to let thermal equilibrium dictate resistances
+            # reset_edges = np.zeros(Strctr.NE, dtype=bool)
+            # if len(self.loss_in_t) > 1:
+                # # Codex suggesiton 4pm
+                # changed_output_nodes = Strctr.output_nodes_arr[np.asarray(self.loss_in_t[-2])[0].ravel() * 
+                #                                                np.asarray(self.loss_in_t[-1])[0].ravel()<0]
+                # reset_edges = (np.isin(Strctr.EI, changed_output_nodes) | np.isin(Strctr.EJ, changed_output_nodes))
+                # self.beta[reset_edges] = 0.0 * self.beta[reset_edges]
+
+                # # # Codex suggestion 5pm
+                # previous_loss = np.asarray(self.loss_in_t[-2])[0].ravel()
+                # current_loss = np.asarray(self.loss_in_t[-1])[0].ravel()
+
+                # approaching = np.abs(current_loss) < np.abs(previous_loss)
+                # retention = np.ones_like(current_loss)
+
+                # retention[approaching] = ( np.abs(current_loss[approaching]) / (np.abs(previous_loss[approaching]) + 1e-12)
+                #                           ) ** (1/3)
+
+                # for output_i, output_node in enumerate(Strctr.output_nodes_arr):
+                #     output_edges = (Strctr.EI == output_node) | (Strctr.EJ == output_node)
+                #     self.beta[output_edges] *= retention[output_i]
+            # if len(self.loss_in_t)>1:
+            #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
+            print('beta=', self.beta)
+            Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
+            print('Up_sqrd=', Up_sqrd)
+            Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
+            previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
+            Up = previous_sign * Up_magnitude  # forestall inertia by Codex Sep11
+            # Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
             print('Up', Up)
             update_vec = np.matmul(Strctr.DM_dagger, Up)
             if len(Strctr.ground_nodes_arr):

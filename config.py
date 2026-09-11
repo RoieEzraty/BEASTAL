@@ -28,8 +28,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 1
-    Nout: int = 4
+    Nin: int = 4
+    Nout: int = 1
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -81,8 +81,8 @@ class SupervisorConfig:
     """Dataset and training-loop configuration."""
 
     task_type: str = "Regression"
-    dataset_type: str = "alternating ones"
-    # dataset_type: str = "random uniform"
+    # dataset_type: str = "alternating ones"
+    dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         training_scheme: str = "BEASTAL_NTC"
     else:
@@ -91,10 +91,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 90 * batch_size
+    iterations: int = 700 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 10 # deltaR_NTC
+        alpha = 3 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
@@ -107,6 +107,7 @@ class SupervisorConfig:
     # alpha_scale_nonlin: float = 62.0
     # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
     use_p_tag: bool = False
+    # stay_sample: int = int(iterations/16)
     stay_sample: int = 1
     # normalize_loss: bool = R_UPDATE in {
     #     "deltaR_propto_dp_nonlin",
