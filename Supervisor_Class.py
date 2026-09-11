@@ -232,6 +232,9 @@ class Supervisor:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
         self.loss_scalar_in_t /= denominator
 
+        if not self.supress_prints:
+            print('los scalar=', self.loss_scalar_in_t)
+
     def update_input(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next input pressure in update modality."""
         R_update = BigClass.Variabs.R_update
@@ -427,8 +430,9 @@ class Supervisor:
                 self.grad_loss_vec[BigClass.Strctr.ground_edges] = 0
             grad_norm = np.linalg.norm(grad_loss_vec)
             grad_loss_vec_norm = (grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec))
-            self.grad_loss_vec_norm = grad_loss_vec_norm
-            self.beta = (np.matmul(Strctr.DM, self.update_vec))**2
+            # self.grad_loss_vec_norm = grad_loss_vec_norm
+            self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2
+            # self.beta = 1.0*np.sign(grad_loss_vec_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
             print('beta=', self.beta)
             Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta  # constant
             print('Up_sqrd=', Up_sqrd)
