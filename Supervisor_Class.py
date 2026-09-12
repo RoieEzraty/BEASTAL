@@ -45,7 +45,8 @@ class Supervisor:
         self.normalize_loss: bool = sprvsr.normalize_loss
         self.supress_prints: bool = sprvsr.supress_prints
         self.measure_accuracy_every: int = sprvsr.measure_accuracy_every
-        self.anneal: bool = sprvsr.anneal
+        self.anneal_alpha_enabled: bool = sprvsr.anneal_alpha
+        self.anneal_dt_enabled: bool = sprvsr.anneal_dt and Variabs.R_update == "deltaR_NTC"
         self.T: float = sprvsr.T_annealing
         self.include_Power: bool = sprvsr.include_Power
         self.access_interNodes: bool = sprvsr.access_interNodes
@@ -57,6 +58,7 @@ class Supervisor:
         if Variabs.R_update == "deltaR_NTC":
             self.initial_T: float = sprvsr.initial_T
             self.beta: float = sprvsr.beta
+            self.dt_in_t: NDArray[np.float_] = Variabs.dt_upper * np.ones(self.iterations)
         self.loss_fn = functions.loss_fn_2samples if self.use_p_tag else functions.loss_fn_1sample
         self.lam: float = -80.0**-1
         self.dataset: NDArray[np.float_]
@@ -177,6 +179,16 @@ class Supervisor:
         self.alpha = self.alpha_initial * np.exp(-State.t / (self.T * self.iterations))
         if State.t < self.iterations:
             self.alpha_in_t[State.t] = self.alpha
+
+    def anneal_dt(self, State: "Network_State", Variabs: "User_Variables") -> None:
+        """Exponentially anneal the NTC evolution time between its configured bounds."""
+        if self.iterations <= 1:
+            Variabs.dt = Variabs.dt_lower
+            return
+        progress = np.clip(State.t / (self.iterations-1), 0.0, 1.0)
+        Variabs.dt = Variabs.dt_upper * np.exp(np.log(Variabs.dt_lower/Variabs.dt_upper)*progress)
+        if State.t < self.iterations:
+            self.dt_in_t[State.t] = Variabs.dt
 
     def calc_loss(self, State: "Network_State") -> None:
         """Calculate and record the task loss for the current measurement."""

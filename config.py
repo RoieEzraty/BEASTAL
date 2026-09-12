@@ -61,7 +61,9 @@ class VariablesConfig:
     B: float = 3500  # [K]
     R_25: float = 1000.0  # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
-    dt: float = 10  # [s] waiting time for evolution
+    dt_upper: float = 0.5  # [s] waiting time at the beginning of training
+    dt_lower: float = 0.001  # [s] waiting time at the end of training
+    euler_steps: int = 100  # steps during euler ODE solver.
 
 # -----------------------------
 # Networkx python instance
@@ -83,8 +85,8 @@ class SupervisorConfig:
     """Dataset and training-loop configuration."""
 
     task_type: str = "Regression"
-    dataset_type: str = "alternating ones"
-    # dataset_type: str = "random uniform"
+    # dataset_type: str = "alternating ones"
+    dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         training_scheme: str = "BEASTAL_NTC"
     else:
@@ -93,10 +95,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 6000 * batch_size
+    iterations: int = 1200 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 4 # deltaR_NTC
+        alpha = 1.8 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
@@ -119,7 +121,8 @@ class SupervisorConfig:
     normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal: bool = False
+    anneal_alpha: bool = False
+    anneal_dt: bool = True
     T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False
