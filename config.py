@@ -28,8 +28,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 2
-    Nout: int = 2
+    Nin: int = 4
+    Nout: int = 1
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -61,9 +61,9 @@ class VariablesConfig:
     B: float = 3500  # [K]
     R_25: float = 1000.0  # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
-    dt_upper: float = 0.5  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.001  # [s] waiting time at the end of training
-    euler_steps: int = 100  # steps during euler ODE solver.
+    dt_upper: float = 5  # [s] waiting time at the beginning of training
+    dt_lower: float = 0.5  # [s] waiting time at the end of training
+    euler_steps: int = 6  # steps during euler ODE solver.
 
 # -----------------------------
 # Networkx python instance
@@ -85,8 +85,8 @@ class SupervisorConfig:
     """Dataset and training-loop configuration."""
 
     task_type: str = "Regression"
-    # dataset_type: str = "alternating ones"
-    dataset_type: str = "random uniform"
+    dataset_type: str = "alternating ones"
+    # dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         training_scheme: str = "BEASTAL_NTC"
     else:
@@ -95,10 +95,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 1200 * batch_size
+    iterations: int = 900 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 1.8 # deltaR_NTC
+        alpha = 4.0 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
@@ -136,8 +136,8 @@ class SupervisorConfig:
     # )
     M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
-    normalize: float = 0.75
-    random_state_M: int = 45
+    normalize: float = 0.25
+    random_state_M: int = 46
     random_state: int = 53
 
 # -----------------------------

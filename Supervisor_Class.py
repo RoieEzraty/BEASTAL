@@ -479,6 +479,7 @@ class Supervisor:
             print('Up_sqrd=', Up_sqrd)
             Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
             previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
+            print('previous_sign=', previous_sign)
             Up = previous_sign * Up_magnitude  # forestall inertia by Codex Sep11
             # Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
             # Up = Up_sqrd  # linear, doesn't work
