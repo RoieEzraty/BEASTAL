@@ -62,7 +62,7 @@ class VariablesConfig:
     R_25: float = 1000.0  # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
     dt_upper: float = 5  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.5  # [s] waiting time at the end of training
+    dt_lower: float = 0.0002  # [s] waiting time at the end of training
     euler_steps: int = 6  # steps during euler ODE solver.
 
 # -----------------------------
@@ -95,10 +95,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 900 * batch_size
+    iterations: int = 3000 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 4.0 # deltaR_NTC
+        alpha = 2.0 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
