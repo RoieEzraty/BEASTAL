@@ -28,8 +28,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 4
-    Nout: int = 1
+    Nin: int = 2
+    Nout: int = 2
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -54,12 +54,14 @@ class VariablesConfig:
     normalize_step: bool = False
 
     # NTC variables
-    C_T: float = 35 * 1e-3
-    G_T: float = 3.5 * 1e-3   # physical one
+    C_T: float = 35 * 1e-3  # heat capacity [J/K]
+    G_T: float = 3.5 * 1e-3   # thermal conductance [W/K] physical one
+    # G_T: float = 7 * 1e-3   # quick
     # G_T: float = 3.5 * 1e-4   # small
     B: float = 3500  # [K]
     R_25: float = 1000.0  # [Ohm] Resistance at 25°C
-    T_room: float = 298.15
+    T_room: float = 298.15  # [K]
+    dt: float = 10  # [s] waiting time for evolution
 
 # -----------------------------
 # Networkx python instance
@@ -81,8 +83,8 @@ class SupervisorConfig:
     """Dataset and training-loop configuration."""
 
     task_type: str = "Regression"
-    # dataset_type: str = "alternating ones"
-    dataset_type: str = "random uniform"
+    dataset_type: str = "alternating ones"
+    # dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         training_scheme: str = "BEASTAL_NTC"
     else:
@@ -91,10 +93,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 700 * batch_size
+    iterations: int = 6000 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 3 # deltaR_NTC
+        alpha = 4 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:

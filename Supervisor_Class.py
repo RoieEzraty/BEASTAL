@@ -433,6 +433,7 @@ class Supervisor:
             self.grad_loss_vec_norm = grad_loss_vec_norm
 
             previous_drop = np.matmul(Strctr.DM, self.update_vec)  # forestall inertia by Codex Sep11
+            # self.beta = previous_drop  # linear, doesn't work
             self.beta = previous_drop**2  # forestall inertia by Codex Sep11
             # self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2  # good concoction Sep11
             # self.beta = 1.0*np.sign(grad_loss_vec_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
@@ -468,6 +469,7 @@ class Supervisor:
             previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
             Up = previous_sign * Up_magnitude  # forestall inertia by Codex Sep11
             # Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
+            # Up = Up_sqrd  # linear, doesn't work
             print('Up', Up)
             update_vec = np.matmul(Strctr.DM_dagger, Up)
             if len(Strctr.ground_nodes_arr):

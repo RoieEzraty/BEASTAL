@@ -454,9 +454,10 @@ class Network_State:
             C_T = BigClass.Variabs.C_T  # thermal heat capacity
             G_T = BigClass.Variabs.G_T  # thermal dissipation factor
             T_room = BigClass.Variabs.T_room  # room temperature
-            T = np.maximum(self.T_from_R(BigClass, R_vec), 0)
+            T = np.maximum(self.T_from_R(BigClass, R_vec), 0)  # temperature of every resistor
+            dt = BigClass.Variabs.dt  # physical time during update.
             dRdT = self.dRdT_from_R(BigClass, R_vec, T)
-            delta_R = dRdT/C_T * (delta_p**2/R_vec - G_T * (T-T_room))
+            delta_R = dRdT/C_T * (delta_p**2/R_vec - G_T * (T-T_room)) * dt
             numerical_T_max = T_room / np.sqrt(np.finfo(float).eps)
             finite_temperature_R_min = self.R_from_T(BigClass, numerical_T_max)
             finite_temperature_R_max = self.R_from_T(BigClass, 0)

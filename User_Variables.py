@@ -29,6 +29,7 @@ class User_Variables:
             self.T_room: float = variables.T_room
             self.R_25: float = variables.R_25
             self.B: float = variables.B
+            self.dt: float = variables.dt
         if variables.hysteresis:
             self.hysteresis: bool = True
             self.hyst_thresh: float = variables.hysteresis
