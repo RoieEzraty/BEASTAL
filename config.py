@@ -28,8 +28,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 4
-    Nout: int = 1
+    Nin: int = 1
+    Nout: int = 4
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -61,8 +61,10 @@ class VariablesConfig:
     B: float = 3500  # [K]
     R_25: float = 1000.0  # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
-    dt_upper: float = 5  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.0002  # [s] waiting time at the end of training
+    dt_upper: float = 1.0  # [s] waiting time at the beginning of training
+    dt_lower: float = 0.005  # [s] waiting time at the end of training
+    # dt_upper: float = 100.0
+    # dt_lower: float = 10  # [s] waiting time at the end of training
     euler_steps: int = 6  # steps during euler ODE solver.
 
 # -----------------------------
@@ -95,10 +97,10 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 3000 * batch_size
+    iterations: int = 2000 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 2.0 # deltaR_NTC
+        alpha = 1.0 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
@@ -136,8 +138,9 @@ class SupervisorConfig:
     # )
     M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
-    normalize: float = 0.25
-    random_state_M: int = 46
+    normalize: float = 0.75
+    # normalize: float = 1-1/6
+    random_state_M: int = 45
     random_state: int = 53
 
 # -----------------------------

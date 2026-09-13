@@ -453,9 +453,10 @@ class Network_State:
                     R_nxt = self.R_in_t[-1] + delta_R
             self.R_in_t.append(np.clip(R_nxt, 1e-12, None))
         elif BigClass.Variabs.R_update == 'deltaR_NTC':  # imitate NTC thermistor, delta_R propto -dp*Q
-            R_nxt = self.evolve_NTC_resistances(BigClass, R_vec, delta_p, BigClass.Variabs.euler_steps)
+            T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p, BigClass.Variabs.euler_steps)
+            R_nxt = self.R_from_T(BigClass, T_nxt)
             self.R_in_t.append(R_nxt)
-            self.T_in_t.append(self.T_from_R(BigClass, R_nxt))
+            self.T_in_t.append(T_nxt)
         elif BigClass.Variabs.R_update == 'grad_desc':
             if delta_K is None:
                 raise ValueError("delta_K must be supplied for gradient-descent resistance updates")
@@ -604,30 +605,28 @@ class Network_State:
     #------------------------------
     # NTC thermistor functions
     #------------------------------
-    def evolve_NTC_resistances(self, BigClass: "Big_Class", R_initial: NDArray[np.float_],
+    def evolve_NTC_temperature(self, BigClass: "Big_Class", T_initial: NDArray[np.float_],
                                delta_p: NDArray[np.float_], euler_steps: int = 16) -> NDArray[np.float_]:
-        """Evolve NTC resistances for ``Variabs.dt`` using Euler steps at constant pressure differences.
+        """Evolve NTC temperatures for ``Variabs.dt`` using Euler steps at constant pressure differences.
 
         ``delta_p`` is held fixed throughout the evolution, while the Joule-heating term is recalculated from the
-        evolving resistance at every substep.
+        resistance corresponding to the evolving temperature at every substep.
         """
         if euler_steps <= 0:
             raise ValueError("euler_steps must be positive")
         if BigClass.Variabs.dt < 0:
             raise ValueError("Variabs.dt must be non-negative")
 
-        R = np.asarray(R_initial, dtype=float).copy()
+        T = np.asarray(T_initial, dtype=float).copy()
         fixed_delta_p = np.asarray(delta_p, dtype=float)
         euler_dt = BigClass.Variabs.dt / euler_steps
         numerical_T_max = BigClass.Variabs.T_room / np.sqrt(np.finfo(float).eps)
-        finite_temperature_R_min = self.R_from_T(BigClass, numerical_T_max)
 
         for _ in range(euler_steps):
-            T = np.maximum(self.T_from_R(BigClass, R), 0)
-            dRdT = self.dRdT_from_R(BigClass, R, T)
-            dRdt = dRdT / BigClass.Variabs.C_T * (fixed_delta_p**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room))
-            R = np.clip(R + euler_dt*dRdt, finite_temperature_R_min, None)
-        return R
+            R = self.R_from_T(BigClass, T)
+            dTdt = (fixed_delta_p**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
+            T = np.clip(T + euler_dt*dTdt, BigClass.Variabs.T_room, numerical_T_max)
+        return T
 
     def T_from_R(
         self, BigClass: "Big_Class", R: Union[float, NDArray[np.float_]]

@@ -438,6 +438,13 @@ class Supervisor:
             grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr, 
                                                           self.loss)
             self.grad_loss_vec = grad_loss_vec
+            # if len(self.loss_in_t) >= Strctr.Nin:  # Sep 12 average loss sign goes to ground
+            #     L_bar = np.mean(np.asarray(self.loss_in_t[-Strctr.Nin:], dtype=float), axis=0).ravel()  # Sep 12 average loss sign goes to ground
+            #     for output_idx, output_node in enumerate(Strctr.output_nodes_arr):  # Sep 12 average loss sign goes to ground
+            #         output_ground_edge = np.flatnonzero(((Strctr.EI == output_node) & np.isin(Strctr.EJ, Strctr.ground_nodes_arr)) | ((Strctr.EJ == output_node) & np.isin(Strctr.EI, Strctr.ground_nodes_arr)))  # Sep 12 average loss sign goes to ground
+            #         if output_ground_edge.size:  # Sep 12 average loss sign goes to ground
+            #             edge_idx = output_ground_edge[0]  # Sep 12 average loss sign goes to ground
+            #             self.grad_loss_vec[edge_idx] = -np.sign(L_bar[output_idx])*np.abs(self.grad_loss_vec[edge_idx])  # Sep 12 average loss sign goes to ground
             if Strctr.frozen_ground:
                 self.grad_loss_vec[BigClass.Strctr.ground_edges] = 0
             grad_norm = np.linalg.norm(grad_loss_vec)
@@ -477,12 +484,12 @@ class Supervisor:
             print('beta=', self.beta)
             Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
             print('Up_sqrd=', Up_sqrd)
-            Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
-            previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
+            # Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
+            # previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
             # previous_sign = np.sign(Up_sqrd)
-            print('previous_sign=', previous_sign)
-            Up = previous_sign * Up_magnitude  # forestall inertia by Codex Sep11
-            # Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
+            # print('previous_sign=', previous_sign)
+            # Up = previous_sign * Up_magnitude  # forestall inertia by Codex Sep11
+            Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
             # Up = Up_sqrd  # linear, doesn't work
             # Up = np.minimum(Up, 6)  # clip maximal delta p so T doesn't explode
             print('Up', Up)
