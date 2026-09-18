@@ -34,12 +34,12 @@ class Network_Structure:
             print("Iris classification requires Nin=4 and Nout=3; correcting the structure dimensions")
             self.Nin, self.Nout = 4, 3
 
-        nodes = matrix_functions.build_input_output_and_ground(
-            self.Nin, self.Nout, in_nodes=config.Strctr.in_nodes, Ninter=self.Ninter,
-            out_nodes=config.Strctr.out_nodes, add_ground=config.Strctr.add_ground,
-            net_type=config.Strctr.net_type, seed=config.Strctr.rand_seed,
-            net_height=config.Strctr.net_height, net_len=config.Strctr.net_length
-        )
+        nodes = matrix_functions.build_input_output_and_ground(self.Nin, self.Nout, in_nodes=config.Strctr.in_nodes, 
+                                                               Ninter=self.Ninter, out_nodes=config.Strctr.out_nodes, 
+                                                               add_ground=config.Strctr.add_ground, 
+                                                               net_type=config.Strctr.net_type, seed=config.Strctr.rand_seed,
+                                                               net_height=config.Strctr.net_height, 
+                                                               net_len=config.Strctr.net_length)
         self.input_nodes_arr: NDArray[np.int_] = nodes[0]
         self.extraInput_nodes_arr: NDArray[np.int_] = nodes[1]
         self.inter_nodes_arr: NDArray[np.int_] = nodes[2]
@@ -94,9 +94,7 @@ class Network_Structure:
         output_at_start = np.isin(self.EI, self.output_nodes_arr)
         output_at_end = np.isin(self.EJ, self.output_nodes_arr)
         self.output_edges: NDArray[np.int_] = np.flatnonzero(output_at_start | output_at_end)
-        self.output_edge_directions: NDArray[np.int_] = np.where(
-            output_at_start[self.output_edges], 1, -1
-        ).astype(np.int_)
+        self.output_edge_directions: NDArray[np.int_] = np.where(output_at_start[self.output_edges], 1, -1).astype(np.int_)
 
     def build_inverse_incidence(self) -> None:
         self.DM_dagger: NDArray[np.float_] = matrix_functions.inverse_incidence(self.DM)

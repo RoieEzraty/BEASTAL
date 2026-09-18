@@ -29,7 +29,7 @@ class StructureConfig:
     net_height: int = 16
     net_length: int = 16
     Nin: int = 1
-    Nout: int = 4
+    Nout: int = 2
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -54,15 +54,16 @@ class VariablesConfig:
     normalize_step: bool = False
 
     # NTC variables
-    C_T: float = 35 * 1e-3  # heat capacity [J/K]
-    G_T: float = 3.5 * 1e-3   # thermal conductance [W/K] physical one
+    R_parallel: int = 1  # each edge is R_parallel resistors in parallel
+    C_T: float = R_parallel * 35 * 1e-3  # heat capacity [J/K]
+    G_T: float = R_parallel * 3.5 * 1e-3   # thermal conductance [W/K] physical one
     # G_T: float = 7 * 1e-3   # quick
     # G_T: float = 3.5 * 1e-4   # small
     B: float = 3500  # [K]
-    R_25: float = 1000.0  # [Ohm] Resistance at 25°C
+    R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
-    dt_upper: float = 1.0  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.005  # [s] waiting time at the end of training
+    dt_upper: float = 10.0  # [s] waiting time at the beginning of training
+    dt_lower: float = 0.01  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
     euler_steps: int = 6  # steps during euler ODE solver.

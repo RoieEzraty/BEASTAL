@@ -342,11 +342,9 @@ class Network_State:
 
         # Constraint matrix given constrained nodes and values
         self.CstrTuple: Tuple[NDArray[np.float_], NDArray[np.float_], NDArray[np.float_]]
-        self.CstrTuple = functions.setup_constraints_given_pin(
-            nodes_tuple, nodeData_tuple, BigClass.Strctr.NN,
-            BigClass.Strctr.EI, BigClass.Strctr.EJ,
-            node_sources=node_sources,
-        )
+        self.CstrTuple = functions.setup_constraints_given_pin(nodes_tuple, nodeData_tuple, BigClass.Strctr.NN, 
+                                                               BigClass.Strctr.EI, BigClass.Strctr.EJ, 
+                                                               node_sources=node_sources)
 
         # R to K
         self.K_vec: NDArray[np.float_]  # type hint conductivities
@@ -621,11 +619,12 @@ class Network_State:
         fixed_delta_p = np.asarray(delta_p, dtype=float)
         euler_dt = BigClass.Variabs.dt / euler_steps
         numerical_T_max = BigClass.Variabs.T_room / np.sqrt(np.finfo(float).eps)
+        T_min = min(np.min(T_initial), BigClass.Variabs.T_room)
 
         for _ in range(euler_steps):
             R = self.R_from_T(BigClass, T)
             dTdt = (fixed_delta_p**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
-            T = np.clip(T + euler_dt*dTdt, BigClass.Variabs.T_room, numerical_T_max)
+            T = np.clip(T + euler_dt*dTdt, T_min, numerical_T_max)
         return T
 
     def T_from_R(

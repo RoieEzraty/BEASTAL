@@ -257,14 +257,8 @@ def build_incidence_PC(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], N
     if len(Strctr.ground_nodes_arr) != 1:
         raise ValueError("PC networks require add_ground=True and exactly one ground node")
 
-    node_groups = (
-        Strctr.input_nodes_arr,
-        Strctr.extraInput_nodes_arr,
-        Strctr.inter_nodes_arr,
-        Strctr.output_nodes_arr,
-        Strctr.extraOutput_nodes_arr,
-        Strctr.ground_nodes_arr,
-    )
+    node_groups = (Strctr.input_nodes_arr, Strctr.extraInput_nodes_arr, Strctr.inter_nodes_arr, Strctr.output_nodes_arr,
+                   Strctr.extraOutput_nodes_arr, Strctr.ground_nodes_arr)
     NN = sum(len(nodes) for nodes in node_groups)
     ground_node = int(Strctr.ground_nodes_arr[0])
     EIlst: List[int] = []
