@@ -29,35 +29,36 @@ class Supervisor:
 
     def __init__(self, config: ExperimentConfig, Strctr: "Network_Structure",
                  Variabs: "User_Variables") -> None:
-        sprvsr = config.Sprvsr
-        self.iterations: int = sprvsr.iterations
-        batch_size = sprvsr.batch_size
+        Sprvsr = config.Sprvsr
+        self.control = Sprvsr.control
+        self.iterations: int = Sprvsr.iterations
+        batch_size = Sprvsr.batch_size
         if (isinstance(batch_size, bool)
                 or not isinstance(batch_size, (int, np.integer))
                 or batch_size < 1):
             raise ValueError("batch_size must be a positive integer")
         self.batch_size: int = int(batch_size)
-        self.task_type: str = sprvsr.task_type
-        self.dataset_type: str = sprvsr.dataset_type
-        self.training_scheme: str = sprvsr.training_scheme
-        self.use_p_tag: bool = sprvsr.use_p_tag
-        self.stay_sample: int = sprvsr.stay_sample
-        self.normalize_loss: bool = sprvsr.normalize_loss
-        self.supress_prints: bool = sprvsr.supress_prints
-        self.measure_accuracy_every: int = sprvsr.measure_accuracy_every
-        self.anneal_alpha_enabled: bool = sprvsr.anneal_alpha
-        self.anneal_dt_enabled: bool = sprvsr.anneal_dt and Variabs.R_update == "deltaR_NTC"
-        self.T: float = sprvsr.T_annealing
-        self.include_Power: bool = sprvsr.include_Power
-        self.access_interNodes: bool = sprvsr.access_interNodes
-        self.noise_to_extra: bool = sprvsr.noise_to_extra
-        self.loss_type: str = sprvsr.loss_type
-        self.print_every: int = sprvsr.print_every
-        self.calculate_cosine_sim: bool = sprvsr.calculate_cosine_sim
-        self.alpha_scale_nonlin: float = sprvsr.alpha_scale_nonlin
+        self.task_type: str = Sprvsr.task_type
+        self.dataset_type: str = Sprvsr.dataset_type
+        self.training_scheme: str = Sprvsr.training_scheme
+        self.use_p_tag: bool = Sprvsr.use_p_tag
+        self.stay_sample: int = Sprvsr.stay_sample
+        self.normalize_loss: bool = Sprvsr.normalize_loss
+        self.supress_prints: bool = Sprvsr.supress_prints
+        self.measure_accuracy_every: int = Sprvsr.measure_accuracy_every
+        self.anneal_alpha_enabled: bool = Sprvsr.anneal_alpha
+        self.anneal_dt_enabled: bool = Sprvsr.anneal_dt and Variabs.R_update == "deltaR_NTC"
+        self.T: float = Sprvsr.T_annealing
+        self.include_Power: bool = Sprvsr.include_Power
+        self.access_interNodes: bool = Sprvsr.access_interNodes
+        self.noise_to_extra: bool = Sprvsr.noise_to_extra
+        self.loss_type: str = Sprvsr.loss_type
+        self.print_every: int = Sprvsr.print_every
+        self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim
+        self.alpha_scale_nonlin: float = Sprvsr.alpha_scale_nonlin
         if Variabs.R_update == "deltaR_NTC":
-            self.initial_T: float = sprvsr.initial_T
-            self.beta: float = sprvsr.beta
+            self.initial_T: float = Sprvsr.initial_T
+            self.beta: float = Sprvsr.beta
             self.dt_in_t: NDArray[np.float_] = Variabs.dt_upper * np.ones(self.iterations)
         self.loss_fn = functions.loss_fn_2samples if self.use_p_tag else functions.loss_fn_1sample
         self.lam: float = -80.0**-1
@@ -69,7 +70,7 @@ class Supervisor:
         self.y_test: NDArray[np.float_]
         self.means: NDArray[np.float_]
 
-        self.assign_alpha(sprvsr.alpha, Variabs)
+        self.assign_alpha(Sprvsr.alpha, Variabs)
         self.assign_M(config, Strctr)
         self.create_dataset_and_targets(config, Strctr, Variabs)
         self.create_noise_for_extras(Strctr, Variabs)
@@ -86,8 +87,9 @@ class Supervisor:
         self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
         self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
         self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
-        self.adjoint_output_pressure: NDArray[np.float_] = np.zeros(Strctr.Nout, dtype=float)
+        self.adjoint_output: NDArray[np.float_] = np.zeros(Strctr.Nout, dtype=float)
         self.update_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
+        self.update_source_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NN), dtype=float)
 
     def assign_alpha(self, alpha: float, Variabs: "User_Variables") -> None:
@@ -216,12 +218,21 @@ class Supervisor:
         if sample_count == 0:
             raise ValueError("Cannot normalize loss with an empty training dataset")
         initial_K = matrix_functions.K_from_R(State.R_in_t[0])
-        nodes = (Strctr.input_nodes_arr, Strctr.extraInput_nodes_arr,
-                 Strctr.ground_nodes_arr)
         initial_outputs = []
         for input_values in self.X_train[:sample_count]:
-            constraints = functions.setup_constraints_given_pin(nodes, (input_values, self.extraInput_update_in_t[0]),
-                                                                Strctr.NN, Strctr.EI, Strctr.EJ)
+            if self.control == "pressure":
+                nodes = (Strctr.input_nodes_arr, Strctr.extraInput_nodes_arr, Strctr.ground_nodes_arr)
+                constraints = functions.setup_constraints_given_pin(nodes, (input_values, self.extraInput_update_in_t[0]),
+                                                                    Strctr.NN, Strctr.EI, Strctr.EJ)
+            else:
+                empty_nodes = np.array([], dtype=int)
+                empty_values = np.array([], dtype=float)
+                sources = np.zeros(Strctr.NN, dtype=float)
+                sources[Strctr.input_nodes_arr] = input_values
+                sources[Strctr.extraInput_nodes_arr] = self.extraInput_update_in_t[0]
+                constraints = functions.setup_constraints_given_pin((empty_nodes, empty_nodes, Strctr.ground_nodes_arr),
+                                                                    (empty_values, empty_values), Strctr.NN,
+                                                                    Strctr.EI, Strctr.EJ, node_sources=sources)
             pressures, _ = solve.solve_flow(Strctr, constraints, initial_K)
             initial_outputs.append(pressures[Strctr.output_nodes_arr].ravel())
         desired = self.y_train[:sample_count]
@@ -253,8 +264,9 @@ class Supervisor:
         loss = self.loss_in_t[-1]
         input_update = self.input_update_in_t[-1]
         input_drawn = self.input_drawn_in_t[-1]
-        if self.training_scheme in ['GD_like', 'Adaline', 'BEASTAL_NTC']:
-            delta = self.update_vec[BigClass.Strctr.input_nodes_arr]
+        if self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            update_values = self.update_source_vec if self.control == "current" else self.update_vec
+            delta = update_values[BigClass.Strctr.input_nodes_arr]
         else:
             if self.use_p_tag:
                 input_drawn_prev = self.input_drawn_in_t[-2]
@@ -286,7 +298,10 @@ class Supervisor:
         loss = self.loss_in_t[-1]
         extraInput_update = self.extraInput_update_in_t[-1]
         extraInput = self.extraInput_in_t[-1]
-        if self.use_p_tag:
+        if self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            update_values = self.update_source_vec if self.control == "current" else self.update_vec
+            delta = update_values[BigClass.Strctr.extraInput_nodes_arr]
+        elif self.use_p_tag:
             extraInput_prev = self.extraInput_in_t[-2]
             delta = (extraInput-extraInput_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
@@ -337,7 +352,7 @@ class Supervisor:
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
-        if self.training_scheme in ['GD_like', 'Adaline', 'BEASTAL_NTC', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn']:
+        if self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn']:
             delta = self.update_vec[BigClass.Strctr.output_nodes_arr]
         else:
             if self.use_p_tag:
@@ -405,18 +420,6 @@ class Supervisor:
                 update_vec = -self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec_norm)
             else:
                 update_vec = -self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec[0])
-        elif self.training_scheme == 'Adaline':
-            Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
-            p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
-            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr,
-                                                          self.loss)
-            self.grad_loss_vec = grad_loss_vec
-            grad_loss_vec_norm = grad_loss_vec / np.linalg.norm(grad_loss_vec)
-            self.grad_loss_vec_norm = grad_loss_vec_norm
-            update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss else grad_loss_vec)
-            if BigClass.Strctr.Ninter > 0:
-                for idx in BigClass.Strctr.inter_nodes_arr:
-                    update_vec = np.insert(update_vec, idx, 0)
         elif self.training_scheme == 'Adjoint_pressure':
             Strctr = BigClass.Strctr
             if not State.p_in_t or State.p_adjoint.size < Strctr.NN:
@@ -432,75 +435,93 @@ class Supervisor:
             L_vec = np.zeros(BigClass.Strctr.NN)
             L_vec[out_nodes] = self.loss.ravel()
             update_vec = self.alpha * L_vec
-        elif self.training_scheme == 'BEASTAL_NTC':
-            Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
-            p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
-            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr, Strctr.ground_nodes_arr, 
-                                                          self.loss)
+        elif self.training_scheme in {'BEASTAL', 'BEASTAL_NTC'}:  # same grad_loss_vec for both, different update vectors
+            if self.control == "pressure":
+                Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
+                p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
+                grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
+                                                                Strctr.ground_nodes_arr, self.loss)
+            else:  # current controlled
+                Strctr = BigClass.Strctr
+                p = State.p[:Strctr.NN]
+                grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
+                                                                   Strctr.ground_nodes_arr,
+                                                                   self.loss, parameter="resistance")
             self.grad_loss_vec = grad_loss_vec
-            # if len(self.loss_in_t) >= Strctr.Nin:  # Sep 12 average loss sign goes to ground
-            #     L_bar = np.mean(np.asarray(self.loss_in_t[-Strctr.Nin:], dtype=float), axis=0).ravel()  # Sep 12 average loss sign goes to ground
-            #     for output_idx, output_node in enumerate(Strctr.output_nodes_arr):  # Sep 12 average loss sign goes to ground
-            #         output_ground_edge = np.flatnonzero(((Strctr.EI == output_node) & np.isin(Strctr.EJ, Strctr.ground_nodes_arr)) | ((Strctr.EJ == output_node) & np.isin(Strctr.EI, Strctr.ground_nodes_arr)))  # Sep 12 average loss sign goes to ground
-            #         if output_ground_edge.size:  # Sep 12 average loss sign goes to ground
-            #             edge_idx = output_ground_edge[0]  # Sep 12 average loss sign goes to ground
-            #             self.grad_loss_vec[edge_idx] = -np.sign(L_bar[output_idx])*np.abs(self.grad_loss_vec[edge_idx])  # Sep 12 average loss sign goes to ground
             if Strctr.frozen_ground:
-                self.grad_loss_vec[BigClass.Strctr.ground_edges] = 0
+                self.grad_loss_vec[Strctr.ground_edges] = 0
             grad_norm = np.linalg.norm(grad_loss_vec)
-            grad_loss_vec_norm = (grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec))
+            grad_loss_vec_norm = grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec)
             self.grad_loss_vec_norm = grad_loss_vec_norm
+            if self.training_scheme == 'BEASTAL':
+                update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss
+                                                      else grad_loss_vec)
+                if self.control == "pressure" and BigClass.Strctr.Ninter > 0:
+                    for idx in BigClass.Strctr.inter_nodes_arr:
+                        update_vec = np.insert(update_vec, idx, 0)
+            elif self.training_scheme == 'BEASTAL_NTC':
+                # if len(self.loss_in_t) >= Strctr.Nin:  # Sep 12 average loss sign goes to ground
+                #     L_bar = np.mean(np.asarray(self.loss_in_t[-Strctr.Nin:], dtype=float), axis=0).ravel()  # Sep 12 average loss sign goes to ground
+                #     for output_idx, output_node in enumerate(Strctr.output_nodes_arr):  # Sep 12 average loss sign goes to ground
+                #         output_ground_edge = np.flatnonzero(((Strctr.EI == output_node) & np.isin(Strctr.EJ, Strctr.ground_nodes_arr)) | ((Strctr.EJ == output_node) & np.isin(Strctr.EI, Strctr.ground_nodes_arr)))  # Sep 12 average loss sign goes to ground
+                #         if output_ground_edge.size:  # Sep 12 average loss sign goes to ground
+                #             edge_idx = output_ground_edge[0]  # Sep 12 average loss sign goes to ground
+                #             self.grad_loss_vec[edge_idx] = -np.sign(L_bar[output_idx])*np.abs(self.grad_loss_vec[edge_idx])  # Sep 12 average loss sign goes to ground
+                previous_drop = np.matmul(Strctr.DM, self.update_vec)  # forestall inertia by Codex Sep11
+                # self.beta = previous_drop  # linear, doesn't work
+                self.beta = previous_drop**2  # forestall inertia by Codex Sep11
+                # self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2  # good concoction Sep11
+                # self.beta = 1.0*np.sign(grad_loss_vec_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
 
-            previous_drop = np.matmul(Strctr.DM, self.update_vec)  # forestall inertia by Codex Sep11
-            # self.beta = previous_drop  # linear, doesn't work
-            self.beta = previous_drop**2  # forestall inertia by Codex Sep11
-            # self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2  # good concoction Sep11
-            # self.beta = 1.0*np.sign(grad_loss_vec_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
-            
-            # # zero beta if loss changes sign to let thermal equilibrium dictate resistances
-            # reset_edges = np.zeros(Strctr.NE, dtype=bool)
-            # if len(self.loss_in_t) > 1:
-                # # Codex suggesiton 4pm
-                # changed_output_nodes = Strctr.output_nodes_arr[np.asarray(self.loss_in_t[-2])[0].ravel() * 
-                #                                                np.asarray(self.loss_in_t[-1])[0].ravel()<0]
-                # reset_edges = (np.isin(Strctr.EI, changed_output_nodes) | np.isin(Strctr.EJ, changed_output_nodes))
-                # self.beta[reset_edges] = 0.0 * self.beta[reset_edges]
+                # # zero beta if loss changes sign to let thermal equilibrium dictate resistances
+                # reset_edges = np.zeros(Strctr.NE, dtype=bool)
+                # if len(self.loss_in_t) > 1:
+                    # # Codex suggesiton 4pm
+                    # changed_output_nodes = Strctr.output_nodes_arr[np.asarray(self.loss_in_t[-2])[0].ravel() *
+                    #                                                np.asarray(self.loss_in_t[-1])[0].ravel()<0]
+                    # reset_edges = (np.isin(Strctr.EI, changed_output_nodes) | np.isin(Strctr.EJ, changed_output_nodes))
+                    # self.beta[reset_edges] = 0.0 * self.beta[reset_edges]
 
-                # # # Codex suggestion 5pm
-                # previous_loss = np.asarray(self.loss_in_t[-2])[0].ravel()
-                # current_loss = np.asarray(self.loss_in_t[-1])[0].ravel()
+                    # # # Codex suggestion 5pm
+                    # previous_loss = np.asarray(self.loss_in_t[-2])[0].ravel()
+                    # current_loss = np.asarray(self.loss_in_t[-1])[0].ravel()
 
-                # approaching = np.abs(current_loss) < np.abs(previous_loss)
-                # retention = np.ones_like(current_loss)
+                    # approaching = np.abs(current_loss) < np.abs(previous_loss)
+                    # retention = np.ones_like(current_loss)
 
-                # retention[approaching] = ( np.abs(current_loss[approaching]) / (np.abs(previous_loss[approaching]) + 1e-12)
-                #                           ) ** (1/3)
+                    # retention[approaching] = ( np.abs(current_loss[approaching]) / (np.abs(previous_loss[approaching]) + 1e-12)
+                    #                           ) ** (1/3)
 
-                # for output_i, output_node in enumerate(Strctr.output_nodes_arr):
-                #     output_edges = (Strctr.EI == output_node) | (Strctr.EJ == output_node)
-                #     self.beta[output_edges] *= retention[output_i]
-            # if len(self.loss_in_t)>1:
-            #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
-            print('beta=', self.beta)
-            Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
-            print('Up_sqrd=', Up_sqrd)
-            # Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
-            # previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
-            # previous_sign = np.sign(Up_sqrd)
-            # print('previous_sign=', previous_sign)
-            # Up = previous_sign * Up_magnitude  # forestall inertia by Codex Sep11
-            Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
-            # Up = Up_sqrd  # linear, doesn't work
-            # Up = np.minimum(Up, 6)  # clip maximal delta p so T doesn't explode
-            print('Up', Up)
-            update_vec = np.matmul(Strctr.DM_dagger, Up)
-            if len(Strctr.ground_nodes_arr):
-                update_vec -= update_vec[Strctr.ground_nodes_arr[0]]
-            if BigClass.Strctr.Ninter > 0:
-                for idx in BigClass.Strctr.inter_nodes_arr:
-                    update_vec = np.insert(update_vec, idx, 0)
+                    # for output_i, output_node in enumerate(Strctr.output_nodes_arr):
+                    #     output_edges = (Strctr.EI == output_node) | (Strctr.EJ == output_node)
+                    #     self.beta[output_edges] *= retention[output_i]
+                # if len(self.loss_in_t)>1:
+                #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
+                print('beta=', self.beta)
+                Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
+                print('Up_sqrd=', Up_sqrd)
+                # Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
+                # previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
+                # previous_sign = np.sign(Up_sqrd)
+                # print('previous_sign=', previous_sign)
+                # Up = previous_sign * Up_magnitude  # forestall inertia by Codex Sep11
+                Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
+                # Up = Up_sqrd  # linear, doesn't work
+                # Up = np.minimum(Up, 6)  # clip maximal delta p so T doesn't explode
+                print('Up', Up)
+                update_vec = np.matmul(Strctr.DM_dagger, Up)
+                if len(Strctr.ground_nodes_arr):
+                    update_vec -= update_vec[Strctr.ground_nodes_arr[0]]
+                if self.control == "pressure" and BigClass.Strctr.Ninter > 0:
+                    for idx in BigClass.Strctr.inter_nodes_arr:
+                        update_vec = np.insert(update_vec, idx, 0)
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
+        if self.control == "current":
+            if len(ground_nodes):
+                update_vec = update_vec - update_vec[ground_nodes[0]]
+            physical_laplacian = BigClass.Strctr.DM.T @ (State.K_vec[:, None] * BigClass.Strctr.DM)
+            self.update_source_vec = physical_laplacian @ update_vec
         self.update_vec = update_vec
         update_index = State.t - 1
         if not 0 <= update_index < self.iterations:
@@ -515,4 +536,4 @@ class Supervisor:
         output_residual = output_residual.reshape(-1)
         if output_residual.size != Strctr.Nout:
             raise ValueError(f"Adjoint output residual has {output_residual.size} entries; expected {Strctr.Nout}")
-        self.adjoint_output_pressure = self.alpha * output_residual
+        self.adjoint_output = self.alpha * output_residual

@@ -626,6 +626,47 @@ def grad_loss_FC(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_no
     return grad_loss_vec
 
 
+def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_nodes_arr: NDArray[np.int_],
+                      ground_nodes_arr: NDArray[np.int_],
+                      loss: NDArray[np.float_], parameter: str = "resistance") -> NDArray[np.float_]:
+    """Compute the edge-parameter loss gradient for a current-controlled linear network.
+
+    The fixed-current sensitivity is ``dV/dk_e = -L^-1 b_e b_e.T V`` on the non-ground nodes. ``loss`` uses the
+    project convention ``desired-output``. The default return value is the resistance gradient required by the
+    material update; pass ``parameter='conductance'`` to obtain the conductance gradient directly. The Laplacian is
+    evaluated at the unit-conductance reference state because conductances are not supplied to this calculation.
+    """
+    conductances = np.ones(NE, dtype=float)
+    node_pressures = np.asarray(p, dtype=float).reshape(-1)[:DM.shape[1]]
+    output_nodes = np.asarray(output_nodes_arr, dtype=int).reshape(-1)
+    ground_nodes = np.asarray(ground_nodes_arr, dtype=int).reshape(-1)
+    loss_array = np.asarray(loss, dtype=float)
+    output_loss = (loss_array[0] if loss_array.ndim > 1 else loss_array).reshape(-1)
+    if DM.shape[0] != NE:
+        raise ValueError(f"Expected {NE} edges, got DM.shape[0]={DM.shape[0]}")
+    if node_pressures.size != DM.shape[1]:
+        raise ValueError(f"Expected {DM.shape[1]} node pressures, got {node_pressures.size}")
+    if output_loss.size != output_nodes.size:
+        raise ValueError(f"Expected {output_nodes.size} output losses, got {output_loss.size}")
+    if ground_nodes.size == 0:
+        raise ValueError("Current-controlled gradients require at least one grounded node")
+
+    free_nodes = np.ones(DM.shape[1], dtype=bool)
+    free_nodes[ground_nodes] = False
+    DM_free = DM[:, free_nodes]
+    laplacian = DM_free.T @ (conductances[:, None] * DM_free)
+    partial_loss = np.zeros(DM.shape[1], dtype=float)
+    partial_loss[output_nodes] = output_loss
+    # Mathematically equivalent to L^(-1) @ dL/dout[free_nodes].
+    adjoint = np.linalg.solve(laplacian, partial_loss[free_nodes])
+    grad_conductance = (DM_free @ adjoint) * (DM @ node_pressures)
+    if parameter == "conductance":
+        return grad_conductance
+    if parameter == "resistance":
+        return -(conductances**2) * grad_conductance
+    raise ValueError(f"Unknown gradient parameter: {parameter}")
+
+
 def ChangeRFromFlow(BigClass: "Big_Class", R_max, R_min, R_change_scheme='beads_pressure',
                     allowed_cells=[], beta=0.0):
     """

@@ -112,7 +112,7 @@ class Network_State:
         self.accuracy_in_t: NDArray[np.float_] = zeros(accuracy_size)
         self.t_for_accuracy: NDArray[np.int_] = zeros(accuracy_size, dtype=np.int_)
 
-    def draw_p_in_and_desired(self, Sprvsr: "Supervisor", i: int, noise_to_extra: Optional[bool] = False,
+    def draw_input_and_desired(self, Sprvsr: "Supervisor", i: int, noise_to_extra: Optional[bool] = False,
                               modality: Optional[str] = "measure") -> None:
         """
         Every time step, draw random input pressures and calculate the desired output given input
@@ -205,7 +205,7 @@ class Network_State:
         if not BigClass.Sprvsr.supress_prints:
             print('targets_mat', self.targets_mat)
 
-    def solve_flow_given_modality(self, BigClass: "Big_Class", modality: str,
+    def solve_flow_given_modality(self, BigClass: "Big_Class", modality: str, control: Optional[str] = None,
                                   noise_to_extra: Optional[bool] = False,
                                   access_inters: Optional[bool] = False) -> None:
         """
@@ -220,6 +220,7 @@ class Network_State:
                                                      "measure_for_accuracy" for outputs of mean of Iris class
                                                      "adjoint" for the current-driven intermediate state
                                                      "update" for the resistance-evolving boundary conditions
+        control        - optional boundary-control override; defaults to BigClass.Sprvsr.control
         noise_to_extra - optional bool, whether to add noise to p on extra nodes
         access_inters  - optional bool, whether to change pressure in inter nodes
 
@@ -227,43 +228,68 @@ class Network_State:
         p - pressure at every node under the specific BC, after convergence while allowing conductivities to change
         u - flow at every edge under the specific BC, after convergence while allowing conductivities to change
         """
+        control = BigClass.Sprvsr.control if control is None else control
+        if control not in {"pressure", "current"}:
+            raise ValueError(f"Unknown control type: {control}")
+
+        def source_vector(*node_value_pairs: tuple[NDArray[np.int_], NDArray[np.float_]]) -> NDArray[np.float_]:
+            """Assemble prescribed node currents in a vector aligned with the physical nodes."""
+            sources = np.zeros(BigClass.Strctr.NN, dtype=float)
+            for nodes, values in node_value_pairs:
+                node_indices = np.asarray(nodes, dtype=int).reshape(-1)
+                source_values = np.asarray(values, dtype=float).reshape(-1)
+                if node_indices.size != source_values.size:
+                    raise ValueError(f"Current data has {source_values.size} values for {node_indices.size} nodes")
+                sources[node_indices] = source_values
+            return sources
+
+        empty_nodes = np.array([], dtype=int)
+        empty_values = np.array([], dtype=float)
+
         # Calculate pressure p and flow u
         # Select nodes and pressure data based on modality
         nodes_tuple: functions.NodeArrays
         nodeData_tuple: functions.NodeDataArrays
         node_sources: Optional[NDArray[np.float_]] = None
         if modality in {'measure', 'measure_for_mean', 'measure_for_accuracy'}:
-            if noise_to_extra:
+            if control == "pressure" and noise_to_extra:
                 nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
                                BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.inter_nodes_arr)
                 nodeData_tuple = (self.input_drawn, self.extraInput, self.inter)
-            else:
+            elif control == "pressure":
                 nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
                                BigClass.Strctr.ground_nodes_arr)
                 nodeData_tuple = (self.input_drawn, self.extraInput)
+            else:
+                nodes_tuple = (empty_nodes, empty_nodes, BigClass.Strctr.ground_nodes_arr)
+                nodeData_tuple = (empty_values, empty_values)
+                node_sources = source_vector((BigClass.Strctr.input_nodes_arr, self.input_drawn),
+                                             (BigClass.Strctr.extraInput_nodes_arr, self.extraInput))
+                if noise_to_extra:
+                    nodes_tuple += (BigClass.Strctr.inter_nodes_arr,)
+                    nodeData_tuple += (self.inter,)
         elif modality == 'adjoint':
             if BigClass.Sprvsr.training_scheme != 'Adjoint_pressure':
-                raise ValueError(
-                    "The 'adjoint' modality is only used by training_scheme='Adjoint_pressure'"
-                )
-            nodes_tuple = (
-                np.array([], dtype=int),
-                np.array([], dtype=int),
-                BigClass.Strctr.ground_nodes_arr,
-                BigClass.Strctr.output_nodes_arr,
-                np.array([], dtype=int),
-            )
-            nodeData_tuple = (
-                np.array([], dtype=float),
-                np.array([], dtype=float),
-                np.asarray(BigClass.Sprvsr.adjoint_output_pressure, dtype=float),
-                np.array([], dtype=float),
-            )
+                raise ValueError("The 'adjoint' modality is only used by training_scheme='Adjoint_pressure'")
+            nodes_tuple = (np.array([], dtype=int),
+                           np.array([], dtype=int),
+                           BigClass.Strctr.ground_nodes_arr,
+                           BigClass.Strctr.output_nodes_arr,
+                           np.array([], dtype=int))
+            if control == "pressure":
+                nodeData_tuple = (np.array([], dtype=float),
+                                  np.array([], dtype=float),
+                                  np.asarray(BigClass.Sprvsr.adjoint_output, dtype=float),
+                                  np.array([], dtype=float))
+            else:
+                nodeData_tuple = (empty_values, empty_values)
+                nodes_tuple = (empty_nodes, empty_nodes, BigClass.Strctr.ground_nodes_arr)
+                node_sources = source_vector((BigClass.Strctr.output_nodes_arr,
+                                              np.asarray(BigClass.Sprvsr.adjoint_output, dtype=float)))
         elif modality == 'update':
             training_scheme = BigClass.Sprvsr.training_scheme
             no_input_schemes = {'Adjoint_current_noIn', 'Adjoint_pressure_noIn'}
-            inters = ((BigClass.Sprvsr.access_interNodes or access_inters)
-                      and training_scheme not in no_input_schemes
+            inters = ((BigClass.Sprvsr.access_interNodes or access_inters) and training_scheme not in no_input_schemes
                       and training_scheme != 'Adjoint_pressure')
 
             if training_scheme in no_input_schemes:
@@ -271,72 +297,57 @@ class Network_State:
             elif training_scheme == 'Adjoint_pressure':
                 update_vec = np.asarray(BigClass.Sprvsr.update_vec, dtype=float).reshape(-1)
                 if update_vec.size != BigClass.Strctr.NN:
-                    raise ValueError(
-                        "Adjoint_pressure calc_update_vals_vec must produce an update_vec sized NN"
-                    )
+                    raise ValueError("Adjoint_pressure calc_update_vals_vec must produce an update_vec sized NN")
                 latest_update_values = (update_vec,)
-            else:
-                latest_update_values = (
-                    BigClass.Sprvsr.input_update_in_t[-1],
-                    BigClass.Sprvsr.extraInput_update_in_t[-1],
-                    BigClass.Sprvsr.output_update_in_t[-1],
-                    BigClass.Sprvsr.extraOutput_update_in_t[-1],
-                    BigClass.Sprvsr.inter_update_in_t[-1],
-                )
+            else:  # BEASTAL etc
+                latest_update_values = (BigClass.Sprvsr.input_update_in_t[-1], BigClass.Sprvsr.extraInput_update_in_t[-1],
+                                        BigClass.Sprvsr.output_update_in_t[-1], BigClass.Sprvsr.extraOutput_update_in_t[-1],
+                                        BigClass.Sprvsr.inter_update_in_t[-1])
             if self._last_update_snapshot_t != self.t:
-                self._update_value_snapshots.append(tuple(
-                    np.asarray(values, dtype=float).copy()
-                    for values in latest_update_values
-                ))
+                self._update_value_snapshots.append(tuple(np.asarray(values, dtype=float).copy()
+                                                          for values in latest_update_values))
                 if len(self._update_value_snapshots) > BigClass.Sprvsr.batch_size:
                     del self._update_value_snapshots[:-BigClass.Sprvsr.batch_size]
                 self._last_update_snapshot_t = self.t
 
             if self.t % BigClass.Sprvsr.batch_size == 0:
                 recent_snapshots = self._update_value_snapshots[-BigClass.Sprvsr.batch_size:]
-                update_values = tuple(
-                    np.mean(np.stack([snapshot[index] for snapshot in recent_snapshots]), axis=0)
-                    for index in range(len(latest_update_values))
-                )
+                update_values = tuple(np.mean(np.stack([snapshot[index] for snapshot in recent_snapshots]), axis=0)
+                                      for index in range(len(latest_update_values)))
             else:
                 update_values = latest_update_values
 
             if training_scheme == 'Adjoint_current_noIn':
-                nodes_tuple = (
-                    np.array([], dtype=int), np.array([], dtype=int),
-                    BigClass.Strctr.ground_nodes_arr,
-                )
+                nodes_tuple = (np.array([], dtype=int), np.array([], dtype=int), BigClass.Strctr.ground_nodes_arr)
                 nodeData_tuple = (np.array([], dtype=float), np.array([], dtype=float))
                 node_sources = update_values[0]
             elif training_scheme == 'Adjoint_pressure_noIn':
-                nodes_tuple = (
-                    np.array([], dtype=int), np.array([], dtype=int),
-                    BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
-                    np.array([], dtype=int),
-                )
-                nodeData_tuple = (
-                    np.array([], dtype=float), np.array([], dtype=float),
-                    update_values[0][BigClass.Strctr.output_nodes_arr], np.array([], dtype=float),
-                )
+                nodes_tuple = (np.array([], dtype=int), np.array([], dtype=int), BigClass.Strctr.ground_nodes_arr,
+                               BigClass.Strctr.output_nodes_arr, np.array([], dtype=int))
+                nodeData_tuple = (np.array([], dtype=float), np.array([], dtype=float),
+                                  update_values[0][BigClass.Strctr.output_nodes_arr], np.array([], dtype=float))
             elif training_scheme == 'Adjoint_pressure':
-                nodes_tuple = (
-                    BigClass.Strctr.input_nodes_arr, np.array([], dtype=int),
-                    BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
-                    np.array([], dtype=int),
-                )
-                nodeData_tuple = (
-                    update_values[0][BigClass.Strctr.input_nodes_arr], np.array([], dtype=float),
-                    update_values[0][BigClass.Strctr.output_nodes_arr], np.array([], dtype=float),
-                )
-            else:
-                nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
-                               BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
-                               BigClass.Strctr.extraOutput_nodes_arr)
-                nodeData_tuple = update_values[:4]
+                nodes_tuple = (BigClass.Strctr.input_nodes_arr, np.array([], dtype=int), BigClass.Strctr.ground_nodes_arr,
+                               BigClass.Strctr.output_nodes_arr, np.array([], dtype=int))
+                nodeData_tuple = (update_values[0][BigClass.Strctr.input_nodes_arr], np.array([], dtype=float),
+                                  update_values[0][BigClass.Strctr.output_nodes_arr], np.array([], dtype=float))
+            else:  # BEASTAL etc
+                if control == "pressure":
+                    nodes_tuple = (BigClass.Strctr.input_nodes_arr, BigClass.Strctr.extraInput_nodes_arr,
+                                   BigClass.Strctr.ground_nodes_arr, BigClass.Strctr.output_nodes_arr,
+                                   BigClass.Strctr.extraOutput_nodes_arr)
+                    nodeData_tuple = update_values[:4]  # inputs, extrainputs, outputs, extraoutputs, without inters
+                else:
+                    # Current-controlled inputs remain sources, while outputs are still prescribed voltages.
+                    nodes_tuple = (empty_nodes, empty_nodes, BigClass.Strctr.ground_nodes_arr,
+                                   BigClass.Strctr.output_nodes_arr, BigClass.Strctr.extraOutput_nodes_arr)
+                    nodeData_tuple = (empty_values, empty_values, update_values[2], update_values[3])
+                    node_sources = source_vector((BigClass.Strctr.input_nodes_arr, update_values[0]),
+                                                 (BigClass.Strctr.extraInput_nodes_arr, update_values[1]))
 
             if inters:
                 nodes_tuple += (BigClass.Strctr.inter_nodes_arr,)
-                nodeData_tuple += (update_values[4],)
+                nodeData_tuple += (update_values[4],)  # update_values[4] is just the inters
         else:
             raise ValueError(f"Unknown modality: {modality}")
 
@@ -369,9 +380,7 @@ class Network_State:
 
             if modality == 'measure':  # Only save in time if measuring during training
                 self.output_in_t.append(self.output)
-                self.p_in_t.append(copy.copy(
-                    self.p[:BigClass.Strctr.NN].ravel()
-                ))
+                self.p_in_t.append(copy.copy(self.p[:BigClass.Strctr.NN].ravel()))
                 self.extraOutput_in_t.append(self.extraOutput)
                 self.inter_in_t.append(self.inter)
 
@@ -573,7 +582,7 @@ class Network_State:
     def calculate_accuracy_fullDataset(self, BigClass: "Big_Class") -> None:
         self.accuracy_vec: NDArray[np.int_] = zeros(np.shape(BigClass.Sprvsr.dataset)[0], dtype=np.int_)
         for i, datapoint in enumerate(BigClass.Sprvsr.dataset):
-            self.draw_p_in_and_desired(BigClass.Sprvsr, i, modality='measure_for_accuracy')
+            self.draw_input_and_desired(BigClass.Sprvsr, i, modality='measure_for_accuracy')
             self.solve_flow_given_modality(BigClass, "measure_for_accuracy")  # measure and don't change resistances
             self.accuracy_vec[i] = statistics.calculate_accuracy_1sample(self.output, self.targets_mat,
                                                                          BigClass.Sprvsr.targets[i])
@@ -582,7 +591,7 @@ class Network_State:
     def calculate_accuracy_testset(self, BigClass: "Big_Class") -> None:
         self.accuracy_vec = zeros(np.shape(BigClass.Sprvsr.X_test)[0], dtype=np.int_)
         for i, datapoint in enumerate(BigClass.Sprvsr.X_test):
-            self.draw_p_in_and_desired(BigClass.Sprvsr, i, modality='measure_for_accuracy')
+            self.draw_input_and_desired(BigClass.Sprvsr, i, modality='measure_for_accuracy')
             self.solve_flow_given_modality(BigClass, "measure_for_accuracy")  # measure and don't change resistances
             self.accuracy_vec[i] = statistics.calculate_accuracy_1sample(self.output, self.targets_mat,
                                                                          BigClass.Sprvsr.y_test[i])

@@ -12,9 +12,9 @@ from numpy.typing import NDArray
 # Relevant to all
 # -----------------------------
 
-R_UPDATE = "deltaR_NTC"
+# R_UPDATE = "deltaR_NTC"
 # R_UPDATE = "deltaR_propto_dp_nonlin"
-# R_UPDATE = "deltaR_propto_dp"
+R_UPDATE = "deltaR_propto_dp"
 
 # -----------------------------
 # Networ Structure
@@ -28,7 +28,7 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 1
+    Nin: int = 2
     Nout: int = 2
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -87,13 +87,15 @@ class NetworkxNetConfig:
 class SupervisorConfig:
     """Dataset and training-loop configuration."""
 
+    control: str = "current"  # "pressure" or "current" controlled
+    # control: str = "pressure"  # "pressure" or "current" controlled
     task_type: str = "Regression"
     dataset_type: str = "alternating ones"
     # dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         training_scheme: str = "BEASTAL_NTC"
     else:
-        training_scheme: str = "Adaline"
+        training_scheme: str = "BEASTAL"
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
@@ -105,7 +107,7 @@ class SupervisorConfig:
         beta = 0  # added inside the update rule for constant shift
         initial_T = 1.00 * VariablesConfig.T_room
     else:
-        if training_scheme == "Adaline":
+        if training_scheme == "BEASTAL":
             alpha: float = 0.028  # deltaR_propto_deltap
         else:
             alpha: float = 0.08   # Adjoint
