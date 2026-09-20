@@ -338,16 +338,20 @@ class Network_State:
                                    BigClass.Strctr.extraOutput_nodes_arr)
                     nodeData_tuple = update_values[:4]  # inputs, extrainputs, outputs, extraoutputs, without inters
                 else:
-                    # Current-controlled inputs remain sources, while outputs are still prescribed voltages.
-                    nodes_tuple = (empty_nodes, empty_nodes, BigClass.Strctr.ground_nodes_arr,
-                                   BigClass.Strctr.output_nodes_arr, BigClass.Strctr.extraOutput_nodes_arr)
-                    nodeData_tuple = (empty_values, empty_values, update_values[2], update_values[3])
+                    # In current control all accessible update nodes are sources; only ground fixes the voltage gauge.
+                    nodes_tuple = (empty_nodes, empty_nodes, BigClass.Strctr.ground_nodes_arr)
+                    nodeData_tuple = (empty_values, empty_values)
                     node_sources = source_vector((BigClass.Strctr.input_nodes_arr, update_values[0]),
-                                                 (BigClass.Strctr.extraInput_nodes_arr, update_values[1]))
+                                                 (BigClass.Strctr.extraInput_nodes_arr, update_values[1]),
+                                                 (BigClass.Strctr.output_nodes_arr, update_values[2]),
+                                                 (BigClass.Strctr.extraOutput_nodes_arr, update_values[3]))
 
             if inters:
-                nodes_tuple += (BigClass.Strctr.inter_nodes_arr,)
-                nodeData_tuple += (update_values[4],)  # update_values[4] is just the inters
+                if control == "current":
+                    node_sources += source_vector((BigClass.Strctr.inter_nodes_arr, update_values[4]))
+                else:
+                    nodes_tuple += (BigClass.Strctr.inter_nodes_arr,)
+                    nodeData_tuple += (update_values[4],)  # update_values[4] is just the inters
         else:
             raise ValueError(f"Unknown modality: {modality}")
 
@@ -460,7 +464,12 @@ class Network_State:
                     R_nxt = self.R_in_t[-1] + delta_R
             self.R_in_t.append(np.clip(R_nxt, 1e-12, None))
         elif BigClass.Variabs.R_update == 'deltaR_NTC':  # imitate NTC thermistor, delta_R propto -dp*Q
-            T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p, BigClass.Variabs.euler_steps)
+            if BigClass.Sprvsr.control == 'pressure':
+                T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p=delta_p, 
+                                                    euler_steps=BigClass.Variabs.euler_steps)
+            elif BigClass.Sprvsr.control == 'current':
+                T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
+                                                    euler_steps=BigClass.Variabs.euler_steps)
             R_nxt = self.R_from_T(BigClass, T_nxt)
             self.R_in_t.append(R_nxt)
             self.T_in_t.append(T_nxt)
@@ -613,26 +622,33 @@ class Network_State:
     # NTC thermistor functions
     #------------------------------
     def evolve_NTC_temperature(self, BigClass: "Big_Class", T_initial: NDArray[np.float_],
-                               delta_p: NDArray[np.float_], euler_steps: int = 16) -> NDArray[np.float_]:
-        """Evolve NTC temperatures for ``Variabs.dt`` using Euler steps at constant pressure differences.
+                               delta_p: Optional[NDArray[np.float_]] = None, Q: Optional[NDArray[np.float_]] = None,
+                               euler_steps: int = 16) -> NDArray[np.float_]:
+        """Evolve NTC temperatures for ``Variabs.dt`` at constant edge pressure drops or currents.
 
-        ``delta_p`` is held fixed throughout the evolution, while the Joule-heating term is recalculated from the
-        resistance corresponding to the evolving temperature at every substep.
+        Supply exactly one of ``delta_p`` or ``Q``. The selected edge drive is held fixed while the Joule-heating
+        term is recalculated from the resistance corresponding to the evolving temperature at every substep.
         """
         if euler_steps <= 0:
             raise ValueError("euler_steps must be positive")
         if BigClass.Variabs.dt < 0:
             raise ValueError("Variabs.dt must be non-negative")
+        if (delta_p is None) == (Q is None):
+            raise ValueError("Supply exactly one of delta_p or Q")
 
         T = np.asarray(T_initial, dtype=float).copy()
-        fixed_delta_p = np.asarray(delta_p, dtype=float)
+        delta_p_const = None if delta_p is None else np.asarray(delta_p, dtype=float).copy()
+        Q_const = None if Q is None else np.asarray(Q, dtype=float).copy()
         euler_dt = BigClass.Variabs.dt / euler_steps
         numerical_T_max = BigClass.Variabs.T_room / np.sqrt(np.finfo(float).eps)
         T_min = min(np.min(T_initial), BigClass.Variabs.T_room)
 
         for _ in range(euler_steps):
             R = self.R_from_T(BigClass, T)
-            dTdt = (fixed_delta_p**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
+            if delta_p_const is not None:  # hold pressure constant
+                dTdt = (delta_p_const**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
+            else:  # hold current constant
+                dTdt = (Q_const**2*R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
             T = np.clip(T + euler_dt*dTdt, T_min, numerical_T_max)
         return T
 

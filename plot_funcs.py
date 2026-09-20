@@ -46,7 +46,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     """
     one plot with 4 subfigures of
     1) mean absolute value of loss in time
-    2) inputs and outputs in the update modality, in time
+    2) controlled inputs and outputs in the update modality, in time
     3) resistances in time
     4) Network structure, from networkx pos_lattice
 
@@ -109,7 +109,8 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     ax2.plot(BigClass.Sprvsr.input_update_in_t[1:])
     if BigClass.Sprvsr.access_interNodes:
         ax2.plot(BigClass.Sprvsr.inter_update_in_t[1:])
-    ax2.set_title('"Update" modality pressure')
+    update_quantity = 'current' if BigClass.Sprvsr.control == "current" else 'pressure'
+    ax2.set_title(f'"Update" modality {update_quantity}')
     ax2.set_xlabel('t')
     if legend2 and len(legend2) < 6:
         ax2.legend(legend2)

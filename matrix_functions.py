@@ -631,10 +631,11 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
                       loss: NDArray[np.float_], parameter: str = "resistance") -> NDArray[np.float_]:
     """Compute the edge-parameter loss gradient for a current-controlled linear network.
 
-    The fixed-current sensitivity is ``dV/dk_e = -L^-1 b_e b_e.T V`` on the non-ground nodes. ``loss`` uses the
-    project convention ``desired-output``. The default return value is the resistance gradient required by the
-    material update; pass ``parameter='conductance'`` to obtain the conductance gradient directly. The Laplacian is
-    evaluated at the unit-conductance reference state because conductances are not supplied to this calculation.
+    At fixed node currents and unit resistance, ``dV/dR_e = L^-1 b_e b_e.T V`` on the non-ground nodes. With the
+    project convention ``loss = desired-output``, the default return value is the gradient of
+    ``0.5 * ||desired-output||**2`` with respect to resistance. Pass ``parameter='conductance'`` to obtain the
+    conductance gradient instead. The factor of two for an unhalved squared loss can be absorbed into the learning
+    rate. The Laplacian is evaluated at the unit-resistance reference state because resistances are not supplied.
     """
     conductances = np.ones(NE, dtype=float)
     node_pressures = np.asarray(p, dtype=float).reshape(-1)[:DM.shape[1]]
@@ -657,7 +658,7 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
     laplacian = DM_free.T @ (conductances[:, None] * DM_free)
     partial_loss = np.zeros(DM.shape[1], dtype=float)
     partial_loss[output_nodes] = output_loss
-    # Mathematically equivalent to L^(-1) @ dL/dout[free_nodes].
+    # Mathematically equivalent to np.linalg.inv(laplacian) @ partial_loss[free_nodes].
     adjoint = np.linalg.solve(laplacian, partial_loss[free_nodes])
     grad_conductance = (DM_free @ adjoint) * (DM @ node_pressures)
     if parameter == "conductance":

@@ -12,9 +12,9 @@ from numpy.typing import NDArray
 # Relevant to all
 # -----------------------------
 
-# R_UPDATE = "deltaR_NTC"
+R_UPDATE = "deltaR_NTC"
 # R_UPDATE = "deltaR_propto_dp_nonlin"
-R_UPDATE = "deltaR_propto_dp"
+# R_UPDATE = "deltaR_propto_dp"
 
 # -----------------------------
 # Networ Structure
@@ -28,8 +28,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 2
-    Nout: int = 2
+    Nin: int = 1
+    Nout: int = 5
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -62,8 +62,8 @@ class VariablesConfig:
     B: float = 3500  # [K]
     R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
-    dt_upper: float = 10.0  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.01  # [s] waiting time at the end of training
+    dt_upper: float = 0.08  # [s] waiting time at the beginning of training
+    dt_lower: float = 0.02  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
     euler_steps: int = 6  # steps during euler ODE solver.
@@ -100,19 +100,25 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 2000 * batch_size
+    iterations: int = 1000 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
-        alpha = 1.0 # deltaR_NTC
+        if control == "pressure":
+            alpha = 1.0  # deltaR_NTC
+        else:
+            alpha = 0.00005 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
-        initial_T = 1.00 * VariablesConfig.T_room
+        initial_T = 1.50 * VariablesConfig.T_room
     else:
         if training_scheme == "BEASTAL":
-            alpha: float = 0.028  # deltaR_propto_deltap
+            if control == "current":
+                alpha: float = 0.25  # deltaR_propto_deltap
+            else:
+                alpha: float = 0.028  # deltaR_propto_deltap
         else:
             alpha: float = 0.08   # Adjoint
     
-    alpha_scale_nonlin: float = 25.0 * batch_size**(1/2.7)
+    alpha_scale_nonlin: float = 20.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
     # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
     use_p_tag: bool = False
@@ -124,8 +130,9 @@ class SupervisorConfig:
     # }
     # normalize_loss = True
     normalize_loss = False
-    supress_prints: bool = True
+    supress_prints: bool = False
     measure_accuracy_every: int = 15
+    # anneal_alpha: bool = True
     anneal_alpha: bool = False
     anneal_dt: bool = True
     T_annealing: float = 0.75

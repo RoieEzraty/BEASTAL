@@ -71,7 +71,7 @@ class Supervisor:
         self.means: NDArray[np.float_]
 
         self.assign_alpha(Sprvsr.alpha, Variabs)
-        self.assign_M(config, Strctr)
+        self.assign_M(config, Strctr, Variabs)
         self.create_dataset_and_targets(config, Strctr, Variabs)
         self.create_noise_for_extras(Strctr, Variabs)
 
@@ -100,7 +100,7 @@ class Supervisor:
         self.alpha: float = self.alpha_initial
         self.alpha_in_t: NDArray[np.float_] = self.alpha_initial * np.ones(self.iterations)
 
-    def assign_M(self, config: ExperimentConfig, Strctr: "Network_Structure") -> None:
+    def assign_M(self, config: ExperimentConfig, Strctr: "Network_Structure", Variabs: Optional["User_Variables"] = None) -> None:
         """Build and optionally normalize the regression task matrix."""
         required_size = Strctr.Nin * Strctr.Nout
         configured_values = config.Sprvsr.M_values
@@ -114,6 +114,10 @@ class Supervisor:
                 M_values = M_values[:required_size]
         if config.Sprvsr.normalize_M:
             M_values = functions.normalize_M(M_values, config.Sprvsr.normalize, Strctr.Nin, Strctr.Nout)
+
+        if Variabs.R_update == "deltaR_NTC" and self.control == "current":  # normalize relative to resistances
+            print(f'multiplied M by {Variabs.R_25} due to NTC current controlled')
+            M_values = M_values * Variabs.R_25 / Strctr.Nout
         if np.size(M_values) != required_size:
             raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
                              f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}.")
@@ -132,6 +136,7 @@ class Supervisor:
                 self.dataset = np.tile(np.eye(Strctr.Nin), (int(self.iterations / Strctr.Nin), 1))
             else:
                 self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations, Strctr.Nin))
+
             self.targets = self.dataset @ self.M.T
             self.X_train = copy.copy(self.dataset)
             self.y_train = copy.copy(self.targets)
@@ -256,10 +261,10 @@ class Supervisor:
         self.loss_scalar_in_t /= denominator
 
         if not self.supress_prints:
-            print('los scalar=', self.loss_scalar_in_t)
+            print('loss scalar=', self.loss_scalar_in_t)
 
     def update_input(self, BigClass: "Big_Class") -> None:
-        """Calculate and record the next input pressure in update modality."""
+        """Calculate and record the next input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         input_update = self.input_update_in_t[-1]
@@ -277,7 +282,9 @@ class Supervisor:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
             else:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
+        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            self.input_update_nxt = delta
+        elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
             self.input_update_nxt = input_update + delta
         elif R_update == 'beads':
             self.input_update_nxt = input_update + self.alpha * np.mean(np.abs(loss[0]))
@@ -293,7 +300,7 @@ class Supervisor:
             print('input_update_nxt=', self.input_update_nxt)
 
     def update_extraInput(self, BigClass: "Big_Class") -> None:
-        """Calculate and record the next extra-input pressure in update modality."""
+        """Calculate and record the next extra-input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         extraInput_update = self.extraInput_update_in_t[-1]
@@ -306,7 +313,9 @@ class Supervisor:
             delta = (extraInput-extraInput_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = extraInput * self.alpha * np.mean(loss[0])
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
+        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            self.extraInput_update_nxt = delta
+        elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraInput_update_nxt = extraInput_update - delta
         elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin', 'deltaR_NTC',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
@@ -321,18 +330,22 @@ class Supervisor:
             print('extraInput_update_nxt=', self.extraInput_update_nxt)
 
     def update_inter(self, BigClass: "Big_Class") -> None:
-        """Calculate and record the next intermediate-node update pressure."""
+        """Calculate and record the next intermediate-node update value."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         inter_update = self.inter_update_in_t[-1]
         inter = State.inter_in_t[-1]
-        if self.use_p_tag:
+        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            delta = self.update_source_vec[BigClass.Strctr.inter_nodes_arr]
+        elif self.use_p_tag:
             inter_prev = State.inter_in_t[-2]
             delta = (inter-inter_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = inter * self.alpha * np.mean(loss[0])
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
+        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            self.inter_update_nxt = delta
+        elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.inter_update_nxt = inter_update - delta
         elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin', 'deltaR_NTC',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay']:
@@ -347,13 +360,14 @@ class Supervisor:
             print('inter_update_nxt=', self.inter_update_nxt)
 
     def update_output(self, BigClass: "Big_Class") -> None:
-        """Calculate and record the next output pressure in update modality."""
+        """Calculate and record the next output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
         if self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn']:
-            delta = self.update_vec[BigClass.Strctr.output_nodes_arr]
+            update_values = self.update_source_vec if self.control == "current" else self.update_vec
+            delta = update_values[BigClass.Strctr.output_nodes_arr]
         else:
             if self.use_p_tag:
                 output_prev = State.output_in_t[-2]
@@ -363,7 +377,9 @@ class Supervisor:
             else:
                 loss_multip = loss[0]/np.linalg.norm(loss[0]) if self.normalize_loss else loss[0]
                 delta = self.alpha * State.output * loss_multip
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
+        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            self.output_update_nxt = delta
+        elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
             self.output_update_nxt = output_update + delta
         elif R_update == 'beads':
             self.output_update_nxt = output_update + self.alpha * np.mean(loss[0])
@@ -379,17 +395,21 @@ class Supervisor:
             print('output_update_nxt', self.output_update_nxt)
 
     def update_extraOutput(self, BigClass: "Big_Class") -> None:
-        """Calculate and record the next extra-output pressure in update modality."""
+        """Calculate and record the next extra-output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         extraOutput_update = copy.copy(self.extraOutput_update_in_t[-1])
-        if self.use_p_tag:
+        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            delta = self.update_source_vec[BigClass.Strctr.extraOutput_nodes_arr]
+        elif self.use_p_tag:
             extraOutput_prev = State.extraOutput_in_t[-2]
             delta = (State.extraOutput-extraOutput_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = State.extraOutput * self.alpha * np.mean(loss[0])
-        if R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
+        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC']:
+            self.extraOutput_update_nxt = delta
+        elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraOutput_update_nxt = extraOutput_update + delta
         elif R_update in ['deltaR_propto_dp', 'deltaR_propto_Q', 'deltaR_propto_Power', 'deltaR_propto_dp_nonlin',
                           'deltaR_propto_dp_decay', 'deltaR_propto_dp_nonlin_decay', 'deltaR_NTC']:
@@ -443,6 +463,8 @@ class Supervisor:
                                                                 Strctr.ground_nodes_arr, self.loss)
             else:  # current controlled
                 Strctr = BigClass.Strctr
+                if not hasattr(Strctr, "CM_dagger") or not hasattr(Strctr, "CM"):
+                    raise ValueError("Current-controlled BEASTAL requires Strctr.build_current_injection()")
                 p = State.p[:Strctr.NN]
                 grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
                                                                    Strctr.ground_nodes_arr,
@@ -454,11 +476,14 @@ class Supervisor:
             grad_loss_vec_norm = grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec)
             self.grad_loss_vec_norm = grad_loss_vec_norm
             if self.training_scheme == 'BEASTAL':
-                update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec_norm if self.normalize_loss
-                                                      else grad_loss_vec)
-                if self.control == "pressure" and BigClass.Strctr.Ninter > 0:
-                    for idx in BigClass.Strctr.inter_nodes_arr:
-                        update_vec = np.insert(update_vec, idx, 0)
+                desired_edge_update = -self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec)
+                if self.control == "pressure":
+                    update_vec = np.matmul(Strctr.DM_dagger, desired_edge_update)
+                    if BigClass.Strctr.Ninter > 0:
+                        for idx in BigClass.Strctr.inter_nodes_arr:
+                            update_vec = np.insert(update_vec, idx, 0)
+                else:
+                    update_vec = np.matmul(Strctr.CM_dagger, desired_edge_update)
             elif self.training_scheme == 'BEASTAL_NTC':
                 # if len(self.loss_in_t) >= Strctr.Nin:  # Sep 12 average loss sign goes to ground
                 #     L_bar = np.mean(np.asarray(self.loss_in_t[-Strctr.Nin:], dtype=float), axis=0).ravel()  # Sep 12 average loss sign goes to ground
@@ -467,9 +492,19 @@ class Supervisor:
                 #         if output_ground_edge.size:  # Sep 12 average loss sign goes to ground
                 #             edge_idx = output_ground_edge[0]  # Sep 12 average loss sign goes to ground
                 #             self.grad_loss_vec[edge_idx] = -np.sign(L_bar[output_idx])*np.abs(self.grad_loss_vec[edge_idx])  # Sep 12 average loss sign goes to ground
-                previous_drop = np.matmul(Strctr.DM, self.update_vec)  # forestall inertia by Codex Sep11
-                # self.beta = previous_drop  # linear, doesn't work
-                self.beta = previous_drop**2  # forestall inertia by Codex Sep11
+                if self.control == 'pressure':
+                    previous_drop = np.matmul(Strctr.DM, self.update_vec)  # forestall inertia by Codex Sep11
+                    # self.beta = previous_drop  # linear, doesn't work
+                    self.beta = previous_drop**2  # forestall inertia by Codex Sep11
+                elif self.control == 'current':
+                    # # CHEATING Sep20
+                    # R = State.R_in_t[-1]
+                    # T = State.T_in_t[-1]
+                    # holding_power = BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
+                    # self.beta = holding_power / R
+                    # WHAT IT ACTUALLY SHOULD BE 
+                    previous_current = np.matmul(Strctr.CM, self.update_vec)  # forestall inertia by Codex Sep11
+                    self.beta =  previous_current**2  # forestall inertia by Codex Sep11
                 # self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2  # good concoction Sep11
                 # self.beta = 1.0*np.sign(grad_loss_vec_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
 
@@ -497,7 +532,7 @@ class Supervisor:
                     #     self.beta[output_edges] *= retention[output_i]
                 # if len(self.loss_in_t)>1:
                 #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
-                print('beta=', self.beta)
+                print('thermal contribution beta=', self.beta)
                 Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
                 print('Up_sqrd=', Up_sqrd)
                 # Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
@@ -508,26 +543,32 @@ class Supervisor:
                 Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
                 # Up = Up_sqrd  # linear, doesn't work
                 # Up = np.minimum(Up, 6)  # clip maximal delta p so T doesn't explode
-                print('Up', Up)
-                update_vec = np.matmul(Strctr.DM_dagger, Up)
-                if len(Strctr.ground_nodes_arr):
-                    update_vec -= update_vec[Strctr.ground_nodes_arr[0]]
-                if self.control == "pressure" and BigClass.Strctr.Ninter > 0:
-                    for idx in BigClass.Strctr.inter_nodes_arr:
-                        update_vec = np.insert(update_vec, idx, 0)
+                print('desire update Up = ', Up)
+                if self.control == "pressure":
+                    update_vec = np.matmul(Strctr.DM_dagger, Up)
+                    if len(Strctr.ground_nodes_arr):
+                        update_vec -= update_vec[Strctr.ground_nodes_arr[0]]
+                    if BigClass.Strctr.Ninter > 0:
+                        for idx in BigClass.Strctr.inter_nodes_arr:
+                            update_vec = np.insert(update_vec, idx, 0)
+                elif self.control == "current":
+                    update_vec = np.matmul(Strctr.CM_dagger, Up)
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
         if self.control == "current":
-            if len(ground_nodes):
-                update_vec = update_vec - update_vec[ground_nodes[0]]
-            physical_laplacian = BigClass.Strctr.DM.T @ (State.K_vec[:, None] * BigClass.Strctr.DM)
-            self.update_source_vec = physical_laplacian @ update_vec
+            # CM_dagger maps the desired edge-current update to the least-squares node-current command directly.
+            # The grounded node supplies the return current during the physical solve.
+            self.update_source_vec = update_vec.copy()
         self.update_vec = update_vec
         update_index = State.t - 1
         if not 0 <= update_index < self.iterations:
             raise IndexError(f"Cannot store update vector for t={State.t}; "
                              f"expected 1 <= t <= {self.iterations}.")
         self.update_vec_in_t[update_index] = update_vec
+
+        if not self.supress_prints:
+            print('grad of loss w.r.t outputs=', grad_loss_vec)
+
 
     def calc_adjoint_output_pressure(self, Strctr: "Network_Structure") -> None:
         """Set the output-only pressure imposed during the adjoint intermediate state."""

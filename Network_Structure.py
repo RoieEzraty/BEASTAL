@@ -99,6 +99,19 @@ class Network_Structure:
     def build_inverse_incidence(self) -> None:
         self.DM_dagger: NDArray[np.float_] = matrix_functions.inverse_incidence(self.DM)
 
+    def build_current_injection(self) -> None:
+        """Build unit-resistance maps between externally injected node currents and edge currents.
+
+        ``CM`` maps a balanced node-current vector to the resulting minimum-norm edge-current vector. Its
+        pseudoinverse maps a desired edge-current vector back to the least-squares node-current command and is
+        mathematically ``DM.T @ DM @ DM_dagger`` (equivalently ``DM.T`` on the incidence cut space).
+        """
+        if not hasattr(self, "DM_dagger"):
+            self.build_inverse_incidence()
+        unit_laplacian_dagger = np.linalg.pinv(self.DM.T @ self.DM)
+        self.CM: NDArray[np.float_] = self.DM @ unit_laplacian_dagger
+        self.CM_dagger: NDArray[np.float_] = self.DM.T @ self.DM @ self.DM_dagger
+
     def build_RM(self) -> None:
         """Build the repetition/selection matrix for this structure's dimensions."""
         self.RM: NDArray[np.int_] = matrix_functions.build_rep_sel(self.Nin, self.Nout, self.DM)
