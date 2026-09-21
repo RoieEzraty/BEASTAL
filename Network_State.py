@@ -468,6 +468,9 @@ class Network_State:
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p=delta_p, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
             elif BigClass.Sprvsr.control == 'current':
+                # CHEATING - you can't use desired current
+                # T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q, 
+                #                                                     euler_steps=BigClass.Variabs.euler_steps)
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
             R_nxt = self.R_from_T(BigClass, T_nxt)

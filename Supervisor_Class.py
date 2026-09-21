@@ -117,7 +117,7 @@ class Supervisor:
 
         if Variabs.R_update == "deltaR_NTC" and self.control == "current":  # normalize relative to resistances
             print(f'multiplied M by {Variabs.R_25} due to NTC current controlled')
-            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin)
+            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin + 1)
             # M_values = M_values * Variabs.R_25**2 / (Strctr.Nout * Strctr.Nin)
         if np.size(M_values) != required_size:
             raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
@@ -138,7 +138,7 @@ class Supervisor:
             else:
                 self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations, Strctr.Nin))
 
-            if Variabs.R_update == 'deltaR_NTC':
+            if Variabs.R_update == 'deltaR_NTC' and self.control == 'current':
                 self.dataset = self.dataset/ np.max(self.dataset) * Variabs.maximal_current
 
             self.targets = self.dataset @ self.M.T
@@ -469,6 +469,8 @@ class Supervisor:
                 Strctr = BigClass.Strctr
                 if not hasattr(Strctr, "CM_dagger") or not hasattr(Strctr, "CM"):
                     raise ValueError("Current-controlled BEASTAL requires Strctr.build_current_injection()")
+                # Strctr.build_current_injection(State.R_in_t[-1])  # CHEATING, you don't really know conductances
+                Strctr.build_current_injection()  # BEASTAL
                 p = State.p[:Strctr.NN]
                 grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
                                                                    Strctr.ground_nodes_arr,
@@ -501,11 +503,11 @@ class Supervisor:
                     # self.beta = previous_drop  # linear, doesn't work
                     self.beta = previous_drop**2  # forestall inertia by Codex Sep11
                 elif self.control == 'current':
-                    # # CHEATING Sep20
+                    # CHEATING Sep20
                     # R = State.R_in_t[-1]
                     # T = State.T_in_t[-1]
-                    # holding_power = BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
-                    # self.beta = holding_power / R
+                    # temperature_excess = np.maximum(T - BigClass.Variabs.T_room, 0.0)
+                    # self.beta = BigClass.Variabs.G_T * temperature_excess / R
                     # WHAT IT ACTUALLY SHOULD BE 
                     previous_current = np.matmul(Strctr.CM, self.update_vec)  # forestall inertia by Codex Sep11
                     self.beta =  previous_current**2  # forestall inertia by Codex Sep11
@@ -538,6 +540,7 @@ class Supervisor:
                 #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
                 print('thermal contribution beta=', self.beta)
                 Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
+                # Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) / R + self.beta  # CHEATING, you don't know R
                 print('Up_sqrd=', Up_sqrd)
                 # Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
                 # previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
@@ -548,6 +551,7 @@ class Supervisor:
                 # Up = Up_sqrd  # linear, doesn't work
                 # Up = np.minimum(Up, 6)  # clip maximal delta p so T doesn't explode
                 print('desire update Up = ', Up)
+                self.desired_update_Q = Up
                 if self.control == "pressure":
                     update_vec = np.matmul(Strctr.DM_dagger, Up)
                     if len(Strctr.ground_nodes_arr):

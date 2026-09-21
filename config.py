@@ -101,15 +101,17 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 2000 * batch_size
+    iterations: int = 4400 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
-            alpha = 1.0  # deltaR_NTC
+            alpha = 2.0  # deltaR_NTC
+            # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 25. # deltaR_NTC
+            alpha = 1.0 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
-        initial_T = 1.00 * VariablesConfig.T_room + 50
+        # initial_T = 1.00 * VariablesConfig.T_room + 50
+        initial_T = 1.00 * VariablesConfig.T_room + 0
     else:
         if training_scheme == "BEASTAL":
             if control == "current":
@@ -151,7 +153,7 @@ class SupervisorConfig:
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 46
+    random_state_M: int = 44
     random_state: int = 53
 
 # -----------------------------

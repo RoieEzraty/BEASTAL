@@ -105,18 +105,25 @@ class Network_Structure:
     def build_inverse_incidence(self) -> None:
         self.DM_dagger: NDArray[np.float_] = matrix_functions.inverse_incidence(self.DM)
 
-    def build_current_injection(self) -> None:
-        """Build unit-resistance maps between externally injected node currents and edge currents.
+    def build_current_injection(self, R_vec: NDArray[np.float_] | None = None) -> None:
+        """Build maps between balanced node-current injections and edge currents.
 
-        ``CM`` maps a balanced node-current vector to the resulting minimum-norm edge-current vector. Its
-        pseudoinverse maps a desired edge-current vector back to the least-squares node-current command and is
-        mathematically ``DM.T @ DM @ DM_dagger`` (equivalently ``DM.T`` on the incidence cut space).
+        ``CM`` maps node currents to edge currents for the supplied edge resistances. Omitting ``R_vec`` retains
+        the previous unit-resistance behavior. ``CM_dagger`` maps a desired edge-current vector to the least-squares
+        balanced node-current command that produces its conductance-weighted projection onto the physical flow space.
         """
-        if not hasattr(self, "DM_dagger"):
-            self.build_inverse_incidence()
-        unit_laplacian_dagger = np.linalg.pinv(self.DM.T @ self.DM)
-        self.CM: NDArray[np.float_] = self.DM @ unit_laplacian_dagger
-        self.CM_dagger: NDArray[np.float_] = self.DM.T @ self.DM @ self.DM_dagger
+        if R_vec is None:  # BEASTAL
+            conductances = np.ones(self.NE, dtype=float)
+        else:  # CHEATING
+            resistances = np.asarray(R_vec, dtype=float).reshape(-1)
+            if resistances.size != self.NE:
+                raise ValueError(f"R_vec has {resistances.size} entries; expected NE={self.NE}")
+            if np.any(resistances <= 0) or not np.all(np.isfinite(resistances)):
+                raise ValueError("R_vec must contain finite positive resistances")
+            conductances = 1.0 / resistances
+        laplacian_dagger = np.linalg.pinv(self.DM.T @ (conductances[:, None] * self.DM))
+        self.CM: NDArray[np.float_] = conductances[:, None] * self.DM @ laplacian_dagger
+        self.CM_dagger: NDArray[np.float_] = np.linalg.pinv(self.CM)
 
     def build_RM(self) -> None:
         """Build the repetition/selection matrix for this structure's dimensions."""
