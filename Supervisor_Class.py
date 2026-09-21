@@ -117,7 +117,8 @@ class Supervisor:
 
         if Variabs.R_update == "deltaR_NTC" and self.control == "current":  # normalize relative to resistances
             print(f'multiplied M by {Variabs.R_25} due to NTC current controlled')
-            M_values = M_values * Variabs.R_25 / Strctr.Nout
+            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin)
+            # M_values = M_values * Variabs.R_25**2 / (Strctr.Nout * Strctr.Nin)
         if np.size(M_values) != required_size:
             raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
                              f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}.")
@@ -136,6 +137,9 @@ class Supervisor:
                 self.dataset = np.tile(np.eye(Strctr.Nin), (int(self.iterations / Strctr.Nin), 1))
             else:
                 self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations, Strctr.Nin))
+
+            if Variabs.R_update == 'deltaR_NTC':
+                self.dataset = self.dataset/ np.max(self.dataset) * Variabs.maximal_current
 
             self.targets = self.dataset @ self.M.T
             self.X_train = copy.copy(self.dataset)

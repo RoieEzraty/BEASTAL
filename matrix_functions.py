@@ -125,14 +125,16 @@ def build_input_output_and_ground(Nin: int, Nout: int, in_nodes: NDArray[np.int_
     return inInterOutGround_tuple
 
 
-def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDArray[np.int_], List[tuple[int, int]],
-                                                          NDArray[np.int_], int, int]:
+def build_incidence(Strctr: "Network_Structure", in_to_g: bool = False) -> Tuple[NDArray[np.int_], NDArray[np.int_], 
+                                                                                 List[tuple[int, int]], NDArray[np.int_],
+                                                                                 int, int]:
     """
     Builds incidence matrix DM as np.array [NEdges, NNodes] for 1 single FC network, w/out ground
     its meaning is 1 at input node and -1 at outpus for every row which resembles one edge.
 
     input (extracted from Variabs input):
-    Strctr: "Network_Structure" class instance with the input, intermediate and output nodes
+    Strctr  - "Network_Structure" class instance with the input, intermediate and output nodes
+    in_to_g - boolean stating whether to connect inputs to ground or not
 
     output:
     EI, EJ     - 1D np.arrays sized NEdges such that EI[i] is node connected to EJ[i] at certain edge
@@ -143,7 +145,7 @@ def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDAr
     """
 
     NN: int = len(Strctr.input_nodes_arr) + len(Strctr.extraInput_nodes_arr) + len(Strctr.inter_nodes_arr) + \
-        len(Strctr.output_nodes_arr) + len(Strctr.extraOutput_nodes_arr) + len(Strctr.ground_nodes_arr)
+              len(Strctr.output_nodes_arr) + len(Strctr.extraOutput_nodes_arr) + len(Strctr.ground_nodes_arr)
     ground_node = int(Strctr.ground_nodes_arr[-1]) if len(Strctr.ground_nodes_arr) else -1
     EIlst: List[int] = []
     EJlst: List[int] = []
@@ -197,10 +199,12 @@ def build_incidence(Strctr: "Network_Structure") -> Tuple[NDArray[np.int_], NDAr
             EIlst.append(interNode)
             EJlst.append(outNode)
 
-    # Don't connect input to ground
+    if in_to_g:  # connect input to ground, usually False
+        for i, inNode in enumerate(Strctr.input_nodes_arr):
+            EIlst.append(inNode)
+            EJlst.append(ground_node)
 
     if len(Strctr.ground_nodes_arr) != 0:
-
         # connect extraInput to ground
         for i, inNode in enumerate(Strctr.extraInput_nodes_arr):
             EIlst.append(inNode)

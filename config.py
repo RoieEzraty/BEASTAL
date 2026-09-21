@@ -28,8 +28,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 1
-    Nout: int = 5
+    Nin: int = 2
+    Nout: int = 2
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -59,7 +59,7 @@ class VariablesConfig:
     G_T: float = R_parallel * 3.5 * 1e-3   # thermal conductance [W/K] physical one
     # G_T: float = 7 * 1e-3   # quick
     # G_T: float = 3.5 * 1e-4   # small
-    B: float = 3500  # [K]
+    B: float = 4100  # [K]
     R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
     dt_upper: float = 0.08  # [s] waiting time at the beginning of training
@@ -67,6 +67,7 @@ class VariablesConfig:
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
     euler_steps: int = 6  # steps during euler ODE solver.
+    maximal_current: float = 1e-3  # [A]
 
 # -----------------------------
 # Networkx python instance
@@ -100,19 +101,19 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 1000 * batch_size
+    iterations: int = 2000 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
             alpha = 1.0  # deltaR_NTC
         else:
-            alpha = 0.00005 # deltaR_NTC
+            alpha = 25. # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
-        initial_T = 1.50 * VariablesConfig.T_room
+        initial_T = 1.00 * VariablesConfig.T_room + 50
     else:
         if training_scheme == "BEASTAL":
             if control == "current":
-                alpha: float = 0.25  # deltaR_propto_deltap
+                alpha: float = 0.2  # deltaR_propto_deltap
             else:
                 alpha: float = 0.028  # deltaR_propto_deltap
         else:
@@ -150,7 +151,7 @@ class SupervisorConfig:
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 45
+    random_state_M: int = 46
     random_state: int = 53
 
 # -----------------------------
