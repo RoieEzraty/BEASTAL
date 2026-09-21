@@ -42,12 +42,19 @@ class Supervisor:
         self.dataset_type: str = Sprvsr.dataset_type
         self.training_scheme: str = Sprvsr.training_scheme
         self.use_p_tag: bool = Sprvsr.use_p_tag
-        self.stay_sample: int = Sprvsr.stay_sample
         self.normalize_loss: bool = Sprvsr.normalize_loss
         self.supress_prints: bool = Sprvsr.supress_prints
         self.measure_accuracy_every: int = Sprvsr.measure_accuracy_every
         self.anneal_alpha_enabled: bool = Sprvsr.anneal_alpha
         self.anneal_dt_enabled: bool = Sprvsr.anneal_dt and Variabs.R_update == "deltaR_NTC"
+        self.anneal_stay_sample_enabled: bool = Sprvsr.anneal_stay_sample
+        if self.anneal_stay_sample_enabled:
+            self.stay_sample_max = Sprvsr.stay_sample_max
+            self.stay_sample_min = Sprvsr.stay_sample_min
+            self.stay_sample: int = Sprvsr.stay_sample_max
+            self.stay_sample_in_t: NDArray[np.float] = self.stay_sample_max * np.ones(self.iterations)
+        else:
+            self.stay_sample: int = Sprvsr.stay_sample_max
         self.T: float = Sprvsr.T_annealing
         self.include_Power: bool = Sprvsr.include_Power
         self.access_interNodes: bool = Sprvsr.access_interNodes
@@ -117,7 +124,7 @@ class Supervisor:
 
         if Variabs.R_update == "deltaR_NTC" and self.control == "current":  # normalize relative to resistances
             print(f'multiplied M by {Variabs.R_25} due to NTC current controlled')
-            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin + 1)
+            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin)
             # M_values = M_values * Variabs.R_25**2 / (Strctr.Nout * Strctr.Nin)
         if np.size(M_values) != required_size:
             raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
@@ -201,6 +208,15 @@ class Supervisor:
         if State.t < self.iterations:
             self.dt_in_t[State.t] = Variabs.dt
 
+    def anneal_stay_sample(self, State: "Network_State", Variabs: "User_Variables") -> None:
+        """Exponentially anneal the amount of time step you stay on each sample between configured bounds."""
+        if self.iterations <= 1:
+            return
+        progress = np.clip(State.t / (self.iterations-1), 0.0, 1.0)
+        self.stay_sample = int(self.stay_sample_max * np.exp(np.log(self.stay_sample_min/self.stay_sample_max)*progress))
+        if State.t < self.iterations:
+            self.stay_sample_in_t[State.t] = self.stay_sample
+
     def calc_loss(self, State: "Network_State") -> None:
         """Calculate and record the task loss for the current measurement."""
         if self.use_p_tag:
@@ -258,7 +274,8 @@ class Supervisor:
             denominator = np.mean(np.abs(initial_losses))
             self.loss_scalar_in_t = np.mean(np.mean(np.abs(self.loss_in_t), axis=1), axis=1)
         elif self.loss_type == 'MSE':
-            denominator = np.mean(np.square(initial_losses))
+            # denominator = np.mean(np.square(initial_losses))
+            denominator = np.mean(np.mean(np.square(self.desired_in_t), axis=0), axis=0)
             self.loss_scalar_in_t = np.mean(np.mean(np.square(self.loss_in_t), axis=1), axis=1)
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
@@ -538,10 +555,8 @@ class Supervisor:
                     #     self.beta[output_edges] *= retention[output_i]
                 # if len(self.loss_in_t)>1:
                 #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
-                print('thermal contribution beta=', self.beta)
                 Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
                 # Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) / R + self.beta  # CHEATING, you don't know R
-                print('Up_sqrd=', Up_sqrd)
                 # Up_magnitude = np.sqrt(np.maximum(Up_sqrd, 0))  # forestall inertia by Codex Sep11
                 # previous_sign = np.where(np.abs(previous_drop) > 1e-12, np.sign(previous_drop), 1.0)  # forestall inertia by Codex Sep11
                 # previous_sign = np.sign(Up_sqrd)
@@ -550,7 +565,6 @@ class Supervisor:
                 Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep11
                 # Up = Up_sqrd  # linear, doesn't work
                 # Up = np.minimum(Up, 6)  # clip maximal delta p so T doesn't explode
-                print('desire update Up = ', Up)
                 self.desired_update_Q = Up
                 if self.control == "pressure":
                     update_vec = np.matmul(Strctr.DM_dagger, Up)
@@ -575,6 +589,10 @@ class Supervisor:
         self.update_vec_in_t[update_index] = update_vec
 
         if not self.supress_prints:
+            if BigClass.Variabs.R_update == 'current':
+                print('thermal contribution beta=', self.beta)
+                print('Up_sqrd=', Up_sqrd)
+                print('desired update Up = ', Up)
             print('grad of loss w.r.t outputs=', grad_loss_vec)
 
 
