@@ -62,11 +62,11 @@ class VariablesConfig:
     B: float = 4100  # [K]
     R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
-    dt_upper: float = 0.05  # [s] waiting time at the beginning of training
+    dt_upper: float = 0.08  # [s] waiting time at the beginning of training
     dt_lower: float = 0.02  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
-    euler_steps: int = 6  # steps during euler ODE solver.
+    euler_steps: int = 12  # steps during euler ODE solver.
     maximal_current: float = 1e-3  # [A]
 
 # -----------------------------
@@ -91,31 +91,35 @@ class SupervisorConfig:
     control: str = "current"  # "pressure" or "current" controlled
     # control: str = "pressure"  # "pressure" or "current" controlled
     task_type: str = "Regression"
-    # dataset_type: str = "alternating ones"
-    dataset_type: str = "random uniform"
+    dataset_type: str = "alternating ones"
+    # dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
-        training_scheme: str = "BEASTAL_NTC"
+        if control == "pressure":
+            training_scheme: str = "BEASTAL_NTC"
+        elif control == "current":
+            training_scheme: str = "BEASTAL_NTC"
+            # training_scheme: str = "PIECETAL_NTC"
     else:
         training_scheme: str = "BEASTAL"
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
-    iterations: int = 1200 * batch_size
+    iterations: int = 3200 * batch_size
     
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
-            alpha = 2.0  # deltaR_NTC
+            alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.1 # deltaR_NTC
+            alpha = 0.04 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0
     else:
         if training_scheme == "BEASTAL":
             if control == "current":
-                alpha: float = 0.2  # deltaR_propto_deltap
+                alpha: float = 15.0  # deltaR_propto_deltap
             else:
                 alpha: float = 0.028  # deltaR_propto_deltap
         else:
@@ -126,20 +130,21 @@ class SupervisorConfig:
     # alpha_scale_nonlin: float = 7.15 * batch_size**(1/3)
     use_p_tag: bool = False
     # stay_sample: int = int(iterations/16)
-    stay_sample_max: int = 20
+    stay_sample_max: int = 1
     stay_sample_min: int = 1    
     # normalize_loss: bool = R_UPDATE in {
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    # normalize_loss = True
-    normalize_loss = False
+    normalize_loss = True
+    # normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    # anneal_alpha: bool = True
-    anneal_alpha: bool = False
+    anneal_alpha: bool = True
+    # anneal_alpha: bool = False
     anneal_dt: bool = False
-    anneal_stay_sample: bool = True
+    # anneal_stay_sample: bool = True
+    anneal_stay_sample: bool = False
     T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False
@@ -155,7 +160,7 @@ class SupervisorConfig:
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 48
+    random_state_M: int = 43
     random_state: int = 53
 
 # -----------------------------

@@ -631,8 +631,8 @@ def grad_loss_FC(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_no
 
 
 def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_nodes_arr: NDArray[np.int_],
-                      ground_nodes_arr: NDArray[np.int_],
-                      loss: NDArray[np.float_], parameter: str = "resistance") -> NDArray[np.float_]:
+                      ground_nodes_arr: NDArray[np.int_], loss: NDArray[np.float_], parameter: str = "resistance",
+                      conductances: Optional[NDArray[np.float_]] = None) -> NDArray[np.float_]:
     """Compute the edge-parameter loss gradient for a current-controlled linear network.
 
     At fixed node currents and unit resistance, ``dV/dR_e = L^-1 b_e b_e.T V`` on the non-ground nodes. With the
@@ -641,7 +641,11 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
     conductance gradient instead. The factor of two for an unhalved squared loss can be absorbed into the learning
     rate. The Laplacian is evaluated at the unit-resistance reference state because resistances are not supplied.
     """
-    conductances = np.ones(NE, dtype=float)
+    if conductances is None:  # This is how they should be
+        conductances = np.ones(NE, dtype=float)
+    else:  # Cheating by passing conductances
+        # conductances = conductances / np.mean(conductances)
+        pass
     node_pressures = np.asarray(p, dtype=float).reshape(-1)[:DM.shape[1]]
     output_nodes = np.asarray(output_nodes_arr, dtype=int).reshape(-1)
     ground_nodes = np.asarray(ground_nodes_arr, dtype=int).reshape(-1)

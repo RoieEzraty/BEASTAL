@@ -426,6 +426,9 @@ class Network_State:
 
         if BigClass.Variabs.R_update in {'deltaR_propto_dp', 'deltaR_propto_dp_decay'}:  # delta_R propto p_in-p_out
             delta_R = BigClass.Variabs.gamma*delta_p * update_cond
+            # CHEATING - you can't satisfy all edges
+            # print('CAUTION! update R is cheating!')
+            # delta_R = BigClass.Variabs.gamma*BigClass.Sprvsr.desired_update_Q * update_cond
             if BigClass.Variabs.normalize_step:
                 delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
                 R_nxt: NDArray[np.float_] = self.R_in_t[-1] + delta_R_norm
@@ -468,9 +471,10 @@ class Network_State:
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p=delta_p, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
             elif BigClass.Sprvsr.control == 'current':
-                # CHEATING - you can't use desired current
+                # # CHEATING - you can't use desired current
+                # print('CAUTION! update R is cheating!')
                 # T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q, 
-                #                                                     euler_steps=BigClass.Variabs.euler_steps)
+                #                                     euler_steps=BigClass.Variabs.euler_steps)
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
             R_nxt = self.R_from_T(BigClass, T_nxt)
