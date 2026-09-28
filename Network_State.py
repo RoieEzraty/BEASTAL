@@ -220,6 +220,7 @@ class Network_State:
                                                      "measure_for_accuracy" for outputs of mean of Iris class
                                                      "adjoint" for the current-driven intermediate state
                                                      "update" for the resistance-evolving boundary conditions
+                                                     "same_BCs" to re-solve with the latest constraint matrix
         control        - optional boundary-control override; defaults to BigClass.Sprvsr.control
         noise_to_extra - optional bool, whether to add noise to p on extra nodes
         access_inters  - optional bool, whether to change pressure in inter nodes
@@ -231,6 +232,12 @@ class Network_State:
         control = BigClass.Sprvsr.control if control is None else control
         if control not in {"pressure", "current"}:
             raise ValueError(f"Unknown control type: {control}")
+        if modality == "same_BCs":
+            if not hasattr(self, "CstrTuple"):
+                raise ValueError("Cannot re-solve the flow before boundary conditions have been set")
+            self.K_vec = matrix_functions.K_from_R(self.R_in_t[-1])
+            self.p, self.u = solve.solve_flow(BigClass.Strctr, self.CstrTuple, self.K_vec)
+            return
 
         def source_vector(*node_value_pairs: tuple[NDArray[np.int_], NDArray[np.float_]]) -> NDArray[np.float_]:
             """Assemble prescribed node currents in a vector aligned with the physical nodes."""
@@ -467,6 +474,7 @@ class Network_State:
                     R_nxt = self.R_in_t[-1] + delta_R
             self.R_in_t.append(np.clip(R_nxt, 1e-12, None))
         elif BigClass.Variabs.R_update == 'deltaR_NTC':  # imitate NTC thermistor, delta_R propto -dp*Q
+            self.R_in_t.append(R_vec.copy())  # working resistance state, updated and re-solved at every Euler step
             if BigClass.Sprvsr.control == 'pressure':
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p=delta_p, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
@@ -477,8 +485,10 @@ class Network_State:
                 #                                     euler_steps=BigClass.Variabs.euler_steps)
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
-            R_nxt = self.R_from_T(BigClass, T_nxt)
-            self.R_in_t.append(R_nxt)
+            # LEGACY FIXED-EDGE-DRIVE MODE: comment out the working-state append above and the re-solve block in
+            # evolve_NTC_temperature, then uncomment the next two lines.
+            # R_nxt = self.R_from_T(BigClass, T_nxt)
+            # self.R_in_t.append(R_nxt)
             self.T_in_t.append(T_nxt)
         elif BigClass.Variabs.R_update == 'grad_desc':
             if delta_K is None:
@@ -631,10 +641,11 @@ class Network_State:
     def evolve_NTC_temperature(self, BigClass: "Big_Class", T_initial: NDArray[np.float_],
                                delta_p: Optional[NDArray[np.float_]] = None, Q: Optional[NDArray[np.float_]] = None,
                                euler_steps: int = 16) -> NDArray[np.float_]:
-        """Evolve NTC temperatures for ``Variabs.dt`` at constant edge pressure drops or currents.
+        """Evolve NTC temperatures for ``Variabs.dt`` while keeping the network boundary conditions constant.
 
-        Supply exactly one of ``delta_p`` or ``Q``. The selected edge drive is held fixed while the Joule-heating
-        term is recalculated from the resistance corresponding to the evolving temperature at every substep.
+        Supply exactly one of ``delta_p`` or ``Q`` for the first Euler step. After every resistance increment, the
+        flow is solved again with the same boundary conditions so that subsequent Joule heating uses the electrically
+        equilibrated edge drive.
         """
         if euler_steps <= 0:
             raise ValueError("euler_steps must be positive")
@@ -649,19 +660,26 @@ class Network_State:
         euler_dt = BigClass.Variabs.dt / euler_steps
         numerical_T_max = BigClass.Variabs.T_room / np.sqrt(np.finfo(float).eps)
         T_min = min(np.min(T_initial), BigClass.Variabs.T_room)
+        frozen_ground = BigClass.Strctr.frozen_ground and BigClass.Strctr.ground_edges.size
 
         for _ in range(euler_steps):
             R = self.R_from_T(BigClass, T)
-            if delta_p_const is not None:  # hold pressure constant
+            if delta_p_const is not None:  # pressure-controlled Joule heating
                 dTdt = (delta_p_const**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
-            else:  # hold current constant
+            else:  # current-controlled Joule heating
                 dTdt = (Q_const**2*R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
             T = np.clip(T + euler_dt*dTdt, T_min, numerical_T_max)
+            if frozen_ground:
+                T[BigClass.Strctr.ground_edges] = T_initial[BigClass.Strctr.ground_edges]
+            self.R_in_t[-1] = self.R_from_T(BigClass, T)
+            self.solve_flow_given_modality(BigClass, "same_BCs")
+            if delta_p_const is not None:
+                delta_p_const = self.u * self.R_in_t[-1]
+            else:
+                Q_const = self.u.copy()
         return T
 
-    def T_from_R(
-        self, BigClass: "Big_Class", R: Union[float, NDArray[np.float_]]
-    ) -> NDArray[np.float_]:
+    def T_from_R(self, BigClass: "Big_Class", R: Union[float, NDArray[np.float_]]) -> NDArray[np.float_]:
         """
         Calculate temperature from resistance using the Steinhart-Hart equation.
 
@@ -685,12 +703,8 @@ class Network_State:
         T_room = BigClass.Variabs.T_room
         return R_25 * np.exp(B * (1/T_values - 1/T_room))
 
-    def dRdT_from_R(
-        self,
-        BigClass: "Big_Class",
-        R: Union[float, NDArray[np.float_]],
-        T: Union[float, NDArray[np.float_]],
-    ) -> NDArray[np.float_]:
+    def dRdT_from_R(self, BigClass: "Big_Class", R: Union[float, NDArray[np.float_]],
+                    T: Union[float, NDArray[np.float_]],) -> NDArray[np.float_]:
         """
         Calculate the NTC resistance derivative with respect to temperature.
 

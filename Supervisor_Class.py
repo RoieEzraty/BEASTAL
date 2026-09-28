@@ -124,8 +124,8 @@ class Supervisor:
 
         if Variabs.R_update == "deltaR_NTC" and self.control == "current":  # normalize relative to resistances
             print(f'multiplied M by {Variabs.R_25} due to NTC current controlled')
-            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin+1)
-            # M_values = M_values * Variabs.R_25**2 / (Strctr.Nout * Strctr.Nin)
+            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin +1)
+            # M_values = M_values * Variabs.R_25
         if np.size(M_values) != required_size:
             raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
                              f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}.")

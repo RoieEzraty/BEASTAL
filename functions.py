@@ -128,12 +128,8 @@ def setup_constraints_given_pin(nodes_tuple: NodeArrays,
     Cstr_full: NDArray[np.float_]  # type hint
     Cstr: NDArray[np.float_]  # type hint
     f: NDArray[np.float_]  # type hint
-    Cstr_full, Cstr, f = matrix_functions.ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ)
-    if node_sources is not None:
-        sources = np.asarray(node_sources, dtype=float).reshape(-1)
-        if sources.size != NN:
-            raise ValueError(f"node_sources has {sources.size} entries; expected NN={NN}")
-        f[:NN, 0] = sources
+    Cstr_full, Cstr, f = matrix_functions.ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ,
+                                                           node_sources=node_sources)
     return Cstr_full, Cstr, f
 
 

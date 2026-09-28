@@ -145,7 +145,8 @@ class SupervisorConfig:
     anneal_dt: bool = False
     # anneal_stay_sample: bool = True
     anneal_stay_sample: bool = False
-    T_annealing: float = 0.75
+    T_annealing: float = 2.0
+    # T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False
     noise_to_extra: bool = False

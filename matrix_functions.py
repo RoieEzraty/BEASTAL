@@ -134,7 +134,7 @@ def build_incidence(Strctr: "Network_Structure", in_to_g: bool = False) -> Tuple
 
     input (extracted from Variabs input):
     Strctr  - "Network_Structure" class instance with the input, intermediate and output nodes
-    in_to_g - boolean stating whether to connect inputs to ground or not
+    in_to_g - boolean stating whether to connect inputs to ground, if a ground node exists
 
     output:
     EI, EJ     - 1D np.arrays sized NEdges such that EI[i] is node connected to EJ[i] at certain edge
@@ -199,7 +199,7 @@ def build_incidence(Strctr: "Network_Structure", in_to_g: bool = False) -> Tuple
             EIlst.append(interNode)
             EJlst.append(outNode)
 
-    if in_to_g:  # connect input to ground, usually False
+    if in_to_g and len(Strctr.ground_nodes_arr) != 0:  # connect input to ground, usually False
         for i, inNode in enumerate(Strctr.input_nodes_arr):
             EIlst.append(inNode)
             EJlst.append(ground_node)
@@ -776,7 +776,8 @@ def ChangeRFromFlow_singleCell(u, p_thresh, R, R_backg, R_max, R_min, R_change_s
     return R_nxt
 
 
-def ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ,
+                     node_sources: NDArray[np.float_] | None = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Builds constraint matrix,
     For constraints on node voltages: 1 at constrained node index, voltage at NN+1 index, for every row
@@ -789,6 +790,7 @@ def ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ) -> Tuple[np.ndarr
     NN          = int, number of nodes in network
     EI          = 1D array of nodes at each edge beginning
     EJ          = 1D array of nodes at each edge ending corresponding to EI
+    node_sources = optional source/force/current at every node, placed in the equilibrium part of f
 
     outputs:
     Cstr_full = 2D array sized [Constraints, NN + 1] representing constraints on nodes and edges.
@@ -798,7 +800,6 @@ def ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ) -> Tuple[np.ndarr
                 (which is f from Rocks and Katifori 2018 https://www.pnas.org/cgi/doi/10.1073/pnas.1806790116)
     f         = constraint vector (from Rocks and Katifori 2018)
     """
-
     # ground nodes
     csg = len(GroundNodes)
     idg = arange(csg)
@@ -815,7 +816,7 @@ def ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ) -> Tuple[np.ndarr
         SN[:, NN] = NodeData
         CStr = np.r_[CStr, SN]
 
-    # to not lose functionality in the future if I want to add Edges as well
+    # to not lose functionality in the future if I want to add pressure constraint directly on Edges
     Edges = array([])
     EdgeData = array([])
 
@@ -831,6 +832,11 @@ def ConstraintMatrix(NodeData, Nodes, GroundNodes, NN, EI, EJ) -> Tuple[np.ndarr
 
     # last column of CStr is vector f
     f = zeros([NN + len(CStr), 1])
+    if node_sources is not None:
+        sources = np.asarray(node_sources, dtype=float).reshape(-1)
+        if sources.size != NN:
+            raise ValueError(f"node_sources has {sources.size} entries; expected NN={NN}")
+        f[:NN, 0] = sources
     f[NN:, 0] = CStr[:, -1]
 
     return CStr, CStr[:, :-1], f

@@ -64,9 +64,17 @@ def _solve_pressure_linear(Strctr: "Network_Structure",
                            K_vec: NDArray[np.float_]) -> NDArray[np.float_]:
     """
     Solve the augmented linear system for node pressures.
+
+    A current-driven network without an explicit ground has an arbitrary voltage offset. If no voltage constraint was
+    supplied, use the last output node (or otherwise the last node) as the implicit zero-voltage return terminal.
     """
     Cstr: NDArray[np.float_] = CstrTuple[1]
     f: NDArray[np.float_] = CstrTuple[2]
+    if len(Cstr) == 0:
+        reference_node = int(Strctr.output_nodes_arr[-1]) if len(Strctr.output_nodes_arr) else Strctr.NN - 1
+        Cstr = np.zeros((1, Strctr.NN), dtype=float)
+        Cstr[0, reference_node] = 1.0
+        f = np.vstack((f, [[0.0]]))
     K_mat: NDArray[np.float_] = np.diag(K_vec)
     _, L_bar = matrix_functions.buildL(Strctr.DM, K_mat, Cstr, Strctr.NN)
     return np.linalg.solve(L_bar, f)
