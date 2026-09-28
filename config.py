@@ -28,12 +28,12 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 2
-    Nout: int = 3
+    Nin: int = 1
+    Nout: int = 1
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
-    add_ground: bool = True
+    add_ground: bool = False
     frozen_ground: bool = False
     rand_seed: int = 35
 
