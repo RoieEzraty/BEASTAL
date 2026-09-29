@@ -28,12 +28,12 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 1
+    Nin: int = 3
     Nout: int = 1
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
-    add_ground: bool = False
+    add_ground: bool = True
     frozen_ground: bool = False
     rand_seed: int = 35
 
@@ -66,7 +66,7 @@ class VariablesConfig:
     dt_lower: float = 0.02  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
-    euler_steps: int = 12  # steps during euler ODE solver.
+    euler_steps: int = 44  # steps during euler ODE solver.
     maximal_current: float = 1e-3  # [A]
 
 # -----------------------------
@@ -112,7 +112,7 @@ class SupervisorConfig:
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.04 # deltaR_NTC
+            alpha = 0.05 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0
@@ -145,8 +145,8 @@ class SupervisorConfig:
     anneal_dt: bool = False
     # anneal_stay_sample: bool = True
     anneal_stay_sample: bool = False
-    T_annealing: float = 2.0
-    # T_annealing: float = 0.75
+    # T_annealing: float = 1.0
+    T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False
     noise_to_extra: bool = False
@@ -161,7 +161,7 @@ class SupervisorConfig:
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 43
+    random_state_M: int = 46
     random_state: int = 53
 
 # -----------------------------
