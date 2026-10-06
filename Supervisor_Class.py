@@ -63,6 +63,8 @@ class Supervisor:
         self.print_every: int = Sprvsr.print_every
         self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim
         self.alpha_scale_nonlin: float = Sprvsr.alpha_scale_nonlin
+        self.cap_Q: bool = Sprvsr.cap_Q
+        self.T_max: float = Sprvsr.T_max
         if Variabs.R_update == "deltaR_NTC":
             self.initial_T: float = Sprvsr.initial_T
             self.beta: float = Sprvsr.beta
@@ -635,6 +637,11 @@ class Supervisor:
                     update_vec = np.matmul(Strctr.CM_dagger, Up)
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
+        if self.control == "current" and self.cap_Q:
+            R_at_T_max = State.R_from_T(BigClass, self.T_max)
+            Q_sqrd_max = BigClass.Variabs.G_T * (self.T_max - BigClass.Variabs.T_room) / R_at_T_max
+            self.Q_max: float = float(np.sqrt(Q_sqrd_max))
+            update_vec = np.clip(update_vec, -self.Q_max, self.Q_max)
         if self.control == "current":
             # CM_dagger maps the desired edge-current update to the least-squares node-current command directly.
             # The grounded node supplies the return current during the physical solve.

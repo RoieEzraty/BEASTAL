@@ -29,7 +29,7 @@ class StructureConfig:
     net_height: int = 16
     net_length: int = 16
     Nin: int = 3
-    Nout: int = 1
+    Nout: int = 3
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -62,11 +62,11 @@ class VariablesConfig:
     B: float = 4100  # [K]
     R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
-    dt_upper: float = 0.08  # [s] waiting time at the beginning of training
+    dt_upper: float = 0.06  # [s] waiting time at the beginning of training
     dt_lower: float = 0.02  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
-    euler_steps: int = 44  # steps during euler ODE solver.
+    euler_steps: int = 40  # steps during euler ODE solver.
     maximal_current: float = 1e-3  # [A]
 
 # -----------------------------
@@ -106,13 +106,16 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 1
     iterations: int = 3200 * batch_size
+
+    cap_Q: bool = True
+    T_max: float = 415.0
     
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.05 # deltaR_NTC
+            alpha = 0.03 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0

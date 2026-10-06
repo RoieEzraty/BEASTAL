@@ -9,7 +9,7 @@ from typing_extensions import Annotated, TypeAlias
 import matrix_functions
 
 
-FloatArray: TypeAlias = NDArray[np.float_]
+FloatArray: TypeAlias = NDArray[np.float64]
 IntArray: TypeAlias = NDArray[np.int_]
 NodeArrays: TypeAlias = Tuple[IntArray, ...]
 NodeDataArrays: TypeAlias = Tuple[FloatArray, ...]
