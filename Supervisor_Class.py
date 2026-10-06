@@ -125,8 +125,9 @@ class Supervisor:
             M_values = functions.normalize_M(M_values, config.Sprvsr.normalize, Strctr.Nin, Strctr.Nout)
 
         if Variabs.R_update == "deltaR_NTC" and self.control == "current":  # normalize relative to resistances
-            print(f'multiplied M by {Variabs.R_25} due to NTC current controlled')
-            M_values = M_values * Variabs.R_25 / (Strctr.Nout * Strctr.Nin + 1)
+            mean_R_25 = float(np.mean(Variabs.R_25))
+            print(f'multiplied M by {mean_R_25} due to NTC current controlled')
+            M_values = M_values * mean_R_25 / (Strctr.Nout * Strctr.Nin + 1)
             # M_values = M_values * Variabs.R_25
         if np.size(M_values) != required_size:
             raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
@@ -640,7 +641,8 @@ class Supervisor:
         if self.control == "current" and self.cap_Q:
             R_at_T_max = State.R_from_T(BigClass, self.T_max)
             Q_sqrd_max = BigClass.Variabs.G_T * (self.T_max - BigClass.Variabs.T_room) / R_at_T_max
-            self.Q_max: float = float(np.sqrt(Q_sqrd_max))
+            self.Q_max_per_edge: NDArray[np.float_] = np.asarray(np.sqrt(Q_sqrd_max), dtype=float)
+            self.Q_max: float = float(np.min(self.Q_max_per_edge))
             update_vec = np.clip(update_vec, -self.Q_max, self.Q_max)
         if self.control == "current":
             # CM_dagger maps the desired edge-current update to the least-squares node-current command directly.

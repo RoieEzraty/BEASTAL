@@ -62,6 +62,9 @@ class VariablesConfig:
     B: float = 4100  # [K]
     R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
+    # noise_to_B: float = 20.0  # [K]
+    noise_to_B: float = 0.0  # [K]
+    noise_to_R_25: float = 0.0  # [Ohm]
     dt_upper: float = 0.06  # [s] waiting time at the beginning of training
     dt_lower: float = 0.02  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
@@ -115,7 +118,7 @@ class SupervisorConfig:
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.03 # deltaR_NTC
+            alpha = 0.1 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0

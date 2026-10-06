@@ -72,7 +72,7 @@ class Network_State:
             BigClass.Sprvsr.dt_in_t.fill(BigClass.Variabs.dt_upper)
             initial_temperature = BigClass.Sprvsr.initial_T
             initial_resistance = self.R_from_T(BigClass, initial_temperature)
-            self.R_in_t = [np.full(BigClass.Strctr.NE, initial_resistance, dtype=float)]
+            self.R_in_t = [np.broadcast_to(initial_resistance, BigClass.Strctr.NE).astype(float).copy()]
         elif R_vec_i is not None:  # user speficied initial resistances
             if np.size(R_vec_i) != BigClass.Strctr.NE:
                 print('R_vec_i has wrong size, initializing all ones')
