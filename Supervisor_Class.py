@@ -91,14 +91,17 @@ class Supervisor:
         self.desired_in_t: List[NDArray[np.float_]] = []
         self.loss_in_t: List[NDArray[np.float_]] = []
         self.loss_scalar_in_t: NDArray[np.float_] = np.array([], dtype=float)
+        self.loss_scalar_in_t_over_batch: List[float] = []
         self.input_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.Nin)]
         self.extraInput_update_in_t: List[NDArray[np.float_]] = [np.ones(Strctr.extraNin)]
         self.inter_update_in_t: List[NDArray[np.float_]] = [np.random.random(Strctr.Ninter)]
         self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
         self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
         self.adjoint_output: NDArray[np.float_] = np.zeros(Strctr.Nout, dtype=float)
-        self.grad_loss_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NE), dtype=float)
-        self.grad_loss_vec_norm_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NE), dtype=float)
+        self.grad_loss_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations*self.batch_size, Strctr.NE), dtype=float)
+        self.grad_loss_vec_norm_in_t: NDArray[np.float_] = np.zeros((self.iterations*self.batch_size, Strctr.NE), dtype=float)
+        self.grad_loss_over_batch: NDArray[np.float_] = np.zeros(Strctr.NE, dtype=float)
+        self.grad_loss_over_batch_norm: NDArray[np.float_] = np.zeros(Strctr.NE, dtype=float)
         self.update_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_source_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NN), dtype=float)
@@ -144,11 +147,11 @@ class Supervisor:
         if self.task_type == "Regression":
             np.random.seed(random_state)
             if Variabs.R_update == "beads":
-                self.dataset = np.ones((self.iterations, Strctr.Nin))
+                self.dataset = np.ones((self.iterations*self.batch_size, Strctr.Nin))
             elif self.dataset_type == "alternating ones":
-                self.dataset = np.tile(np.eye(Strctr.Nin), (int(self.iterations / Strctr.Nin), 1))
+                self.dataset = np.tile(np.eye(Strctr.Nin), (int(self.iterations*self.batch_size / Strctr.Nin), 1))
             else:
-                self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations, Strctr.Nin))
+                self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations*self.batch_size, Strctr.Nin))
 
             if Variabs.R_update == 'deltaR_NTC' and self.control == 'current':
                 self.dataset = self.dataset/ np.max(self.dataset) * Variabs.maximal_current
@@ -285,9 +288,22 @@ class Supervisor:
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
         self.loss_scalar_in_t /= denominator
+        self.loss_scalar_in_t_over_batch = np.asarray(self.loss_scalar_in_t_over_batch, dtype=float) / denominator
 
         if not self.supress_prints:
             print('loss scalar=', self.loss_scalar_in_t)
+
+    def calc_loss_over_batch(self, t: int) -> None:
+        """Record the mean scalar loss over the measurements in batch ``t``."""
+        batch_start = t * self.batch_size
+        batch_end = batch_start + self.batch_size
+        loss_over_batch = np.asarray(self.loss_in_t[batch_start:batch_end], dtype=float)
+        if self.loss_type == 'MAE':
+            self.loss_scalar_in_t_over_batch.append(float(np.mean(np.abs(loss_over_batch))))
+        elif self.loss_type == 'MSE':
+            self.loss_scalar_in_t_over_batch.append(float(np.mean(np.square(loss_over_batch))))
+        else:
+            raise ValueError(f"Unknown loss type: {self.loss_type}")
 
     def update_input(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next input boundary value in update modality."""
@@ -482,43 +498,18 @@ class Supervisor:
             L_vec[out_nodes] = self.loss.ravel()
             update_vec = self.alpha * L_vec
         elif self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'}:  # same gradient, different update vectors
-            if self.control == "pressure":
-                Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
-                p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
-                grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
-                                                                Strctr.ground_nodes_arr, self.loss)
-                
-            else:  # current controlled
-                Strctr = BigClass.Strctr
-                if not hasattr(Strctr, "CM_dagger") or not hasattr(Strctr, "CM"):
-                    raise ValueError("Current-controlled BEASTAL requires Strctr.build_current_injection()")
-                # Strctr.build_current_injection(State.R_in_t[-1])  # CHEATING, you don't really know conductances
-                Strctr.build_current_injection()  # BEASTAL
-                p = State.p[:Strctr.NN]
-                loss_for_gradient = np.asarray(self.loss, dtype=float).copy()
-                if self.training_scheme == 'PIECETAL_NTC':
-                    pair_index = State.t - 1 if t is None else t
-                    chosen_output_index = pair_index % Strctr.Nout
-                    loss_for_gradient[..., np.arange(Strctr.Nout) != chosen_output_index] = 0.0
-                # # CHEATING
-                # print('CAUTION grad loss is cheating by using R')
-                # grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
-                #                                                    Strctr.ground_nodes_arr, loss_for_gradient, 
-                #                                                    conductances = 1/BigClass.State.R_in_t[-1],
-                #                                                    parameter="resistance")
-                grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, Strctr.output_nodes_arr,
-                                                                   Strctr.ground_nodes_arr, loss_for_gradient,
-                                                                   parameter="resistance")
-            self.grad_loss_vec = grad_loss_vec
-            self.grad_loss_vec_in_t[t] = self.grad_loss_vec
+            Strctr = BigClass.Strctr_fict if self.control == "pressure" and BigClass.Strctr.Ninter > 0 else BigClass.Strctr
+            batch_end = State.t * self.batch_size
+            batch_start = batch_end - self.batch_size
+            grad_loss_over_batch = np.mean(self.grad_loss_vec_in_t[batch_start:batch_end], axis=0)
             if Strctr.frozen_ground:
-                self.grad_loss_vec[Strctr.ground_edges] = 0
-            grad_norm = np.linalg.norm(grad_loss_vec)
-            grad_loss_vec_norm = grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec)
-            self.grad_loss_vec_norm = grad_loss_vec_norm
-            self.grad_loss_vec_norm_in_t[t] = self.grad_loss_vec_norm
+                grad_loss_over_batch[Strctr.ground_edges] = 0
+            grad_norm = np.linalg.norm(grad_loss_over_batch)
+            grad_loss_over_batch_norm = grad_loss_over_batch / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_over_batch)
+            self.grad_loss_over_batch = grad_loss_over_batch
+            self.grad_loss_over_batch_norm = grad_loss_over_batch_norm
             if self.training_scheme == 'BEASTAL':
-                desired_edge_update = -self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec)
+                desired_edge_update = -self.alpha * (grad_loss_over_batch_norm if self.normalize_loss else grad_loss_over_batch)
                 if self.control == "pressure":
                     update_vec = np.matmul(Strctr.DM_dagger, desired_edge_update)
                     if BigClass.Strctr.Ninter > 0:
@@ -526,7 +517,7 @@ class Supervisor:
                             update_vec = np.insert(update_vec, idx, 0)
                 else:
                     update_vec = np.matmul(Strctr.CM_dagger, desired_edge_update)
-                self.desired_update_Q = -self.alpha * grad_loss_vec
+                self.desired_update_Q = -self.alpha * grad_loss_over_batch
 
             elif self.training_scheme == 'PIECETAL_NTC':
                 if self.control != 'current':
@@ -556,7 +547,7 @@ class Supervisor:
                 local_current_map = Strctr.CM[np.ix_(selected_edges, selected_nodes)]  # (3, 2): chosen input/output currents to the three selected edge currents
                 local_current_map_dagger = np.linalg.pinv(local_current_map)  # (2, 3): desired selected edge currents to chosen input/output currents
                 local_current_projection = local_current_map @ local_current_map_dagger  # (3, 3): project three requested edge currents onto the realizable two-dimensional subspace
-                selected_gradient = local_current_projection @ grad_loss_vec[selected_edges]
+                selected_gradient = local_current_projection @ grad_loss_over_batch[selected_edges]
                 selected_norm = np.linalg.norm(selected_gradient)
                 selected_gradient_for_update = selected_gradient / selected_norm if self.normalize_loss and selected_norm > 0 else selected_gradient
                 self.beta = (Strctr.CM @ self.update_vec)**2
@@ -568,9 +559,9 @@ class Supervisor:
                 update_vec[selected_nodes] = local_current_map_dagger @ Up[selected_edges]
                 projected_gradient = np.zeros(Strctr.NE, dtype=float)
                 projected_gradient[selected_edges] = selected_gradient
-                self.grad_loss_vec = projected_gradient
+                self.grad_loss_over_batch = projected_gradient
                 projected_norm = np.linalg.norm(projected_gradient)
-                self.grad_loss_vec_norm = projected_gradient / projected_norm if projected_norm > 0 else projected_gradient
+                self.grad_loss_over_batch_norm = projected_gradient / projected_norm if projected_norm > 0 else projected_gradient
                 self.piecetal_selected_edges = selected_edges
                 self.piecetal_local_current_map = local_current_map
                 self.piecetal_current_projection = local_current_projection
@@ -597,7 +588,7 @@ class Supervisor:
                     previous_current = np.matmul(Strctr.CM, self.update_vec)  # forestall inertia by Codex Sep11
                     self.beta =  previous_current**2  # forestall inertia by Codex Sep11
                 # self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2  # good concoction Sep11
-                # self.beta = 1.0*np.sign(grad_loss_vec_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
+                # self.beta = 1.0*np.sign(grad_loss_over_batch_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
 
                 # # zero beta if loss changes sign to let thermal equilibrium dictate resistances
                 # reset_edges = np.zeros(Strctr.NE, dtype=bool)
@@ -623,10 +614,10 @@ class Supervisor:
                     #     self.beta[output_edges] *= retention[output_i]
                 # if len(self.loss_in_t)>1:
                 #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
-                Up_sqrd = self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) + self.beta
+                Up_sqrd = self.alpha * (grad_loss_over_batch_norm if self.normalize_loss else grad_loss_over_batch) + self.beta
                 # CHEATING, you don't know R
                 # dRdT = State.dRdT_from_R(BigClass, R, T)
-                # Up_sqrd = - BigClass.Variabs.C_T * self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec) / (BigClass.Variabs.dt * dRdT) / R + self.beta
+                # Up_sqrd = -BigClass.Variabs.C_T * self.alpha * grad_loss_over_batch / (BigClass.Variabs.dt * dRdT) / R + self.beta
 
                 Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep22
         
@@ -664,8 +655,49 @@ class Supervisor:
                 print('thermal contribution beta=', self.beta)
                 print('Up_sqrd=', Up_sqrd)
                 print('desired update Up = ', Up)
-            print('grad of loss w.r.t outputs=', grad_loss_vec)
+            if self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'}:
+                print('grad of loss over batch=', grad_loss_over_batch)
 
+    def calc_grad_loss(self, BigClass: "Big_Class", tb: Optional[int] = None) -> None:
+        """Calculate and store one measurement's raw loss gradient."""
+        State = BigClass.State
+        in_nodes = copy.copy(BigClass.Strctr.input_nodes_arr)
+        out_nodes = copy.copy(BigClass.Strctr.output_nodes_arr)
+        ground_nodes = copy.copy(BigClass.Strctr.ground_nodes_arr)
+        sample_index = len(self.loss_in_t) - 1 if tb is None else tb
+        if self.control == "pressure":
+            Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
+            p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
+            grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr, self.loss)
+
+        else:  # current controlled
+            Strctr = BigClass.Strctr
+            if not hasattr(Strctr, "CM_dagger") or not hasattr(Strctr, "CM"):
+                raise ValueError("Current-controlled BEASTAL requires Strctr.build_current_injection()")
+            # Strctr.build_current_injection(State.R_in_t[-1])  # CHEATING, you don't really know conductances
+            Strctr.build_current_injection()  # BEASTAL
+            p = State.p[:Strctr.NN]
+            loss_for_gradient = np.asarray(self.loss, dtype=float).copy()
+            if self.training_scheme == 'PIECETAL_NTC':
+                pair_index = sample_index
+                chosen_output_index = pair_index % Strctr.Nout
+                loss_for_gradient[..., np.arange(Strctr.Nout) != chosen_output_index] = 0.0
+            # # CHEATING
+            # print('CAUTION grad loss is cheating by using R')
+            # grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes,
+            #                                                    Strctr.ground_nodes_arr, loss_for_gradient,
+            #                                                    conductances = 1/BigClass.State.R_in_t[-1],
+            #                                                    parameter="resistance")
+            grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
+                                                               loss_for_gradient, parameter="resistance")
+        if Strctr.frozen_ground:
+            grad_loss_vec[Strctr.ground_edges] = 0
+        self.grad_loss_vec = grad_loss_vec
+        self.grad_loss_vec_in_t[sample_index] = grad_loss_vec
+        grad_norm = np.linalg.norm(grad_loss_vec)
+        grad_loss_vec_norm = grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec)
+        self.grad_loss_vec_norm = grad_loss_vec_norm
+        self.grad_loss_vec_norm_in_t[sample_index] = grad_loss_vec_norm
 
     def calc_adjoint_output_pressure(self, Strctr: "Network_Structure") -> None:
         """Set the output-only pressure imposed during the adjoint intermediate state."""

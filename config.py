@@ -98,8 +98,8 @@ class SupervisorConfig:
     control: str = "current"  # "pressure" or "current" controlled
     # control: str = "pressure"  # "pressure" or "current" controlled
     task_type: str = "Regression"
-    dataset_type: str = "alternating ones"
-    # dataset_type: str = "random uniform"
+    # dataset_type: str = "alternating ones"
+    dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
             training_scheme: str = "BEASTAL_NTC"
@@ -111,8 +111,8 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
-    batch_size: int = 1
-    iterations: int = 3200 * batch_size
+    batch_size: int = 2
+    iterations: int = 3200
 
     cap_Q: bool = True
     T_max: float = 415.0
@@ -122,7 +122,7 @@ class SupervisorConfig:
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.05 # deltaR_NTC
+            alpha = 0.02 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0

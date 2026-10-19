@@ -90,14 +90,15 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12.75, 3))
 
     # Loss
-    for t in range(t):
-        if t % len(BigClass.Sprvsr.dataset) == 0 and t != 0 and BigClass.Sprvsr.task_type != 'Regression':
-            ax1.axvline(x=t, color='red', linestyle='--', linewidth=1)
+    for update_t in range(t):
+        if update_t % len(BigClass.Sprvsr.dataset) == 0 and update_t != 0 and BigClass.Sprvsr.task_type != 'Regression':
+            ax1.axvline(x=update_t, color='red', linestyle='--', linewidth=1)
+    loss_over_batch = BigClass.Sprvsr.loss_scalar_in_t_over_batch[:t]
     if movmean_loss:
-        movmean_loss_t = statistics.mov_ave(BigClass.Sprvsr.loss_scalar_in_t, 16)
-        ax1.plot(np.abs(movmean_loss_t[1:]))
+        movmean_loss_t = statistics.mov_ave(loss_over_batch, 16)
+        ax1.plot(np.arange(15, 15+len(movmean_loss_t)), np.abs(movmean_loss_t))
     else:
-        ax1.plot(BigClass.Sprvsr.loss_scalar_in_t[1:])
+        ax1.plot(loss_over_batch)
     # ax1.plot(np.mean(np.mean(np.abs(BigClass.Sprvsr.loss_in_t[1:]), axis=1), axis=1))
     ax1.set_yscale('log')
     ax1.set_ylim(5e-4, 5)

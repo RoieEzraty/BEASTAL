@@ -32,7 +32,7 @@ class Network_State:
     def __init__(self, config: ExperimentConfig, BigClass: "Big_Class") -> None:
         super().__init__()
         self.initial_R: NDArray[np.float_] = np.asarray(config.State.R_vec_i, dtype=float).copy()
-        self.t: int = 0  # number of calculated training updates, including updates buffered in a batch
+        self.t: int = 0  # number of calculated training updates
         self.p: NDArray[np.float_] = array([])  # pressure
         self.u: NDArray[np.float_] = array([])  # flow rate
         self.f_cutoff: NDArray[np.float_] = np.zeros(BigClass.Strctr.NE, dtype=float)
@@ -49,8 +49,6 @@ class Network_State:
         self.T_in_t: List[NDArray[np.float_]] = []  # NTC edge temperatures in time
         Strctr = BigClass.Strctr
         BigClass.Sprvsr.reset_training_history(Strctr)
-        self._update_value_snapshots: List[Tuple[NDArray[np.float_], ...]] = []
-        self._last_update_snapshot_t: Optional[int] = None
         self.hysteresis: NDArray[np.float_] = np.zeros(Strctr.NE, dtype=float)
         self.Power_norm: float = 0.0
         self.Power_norm_in_t: List[float] = []  # Power dissipation in whole network, normalized by inputs
@@ -69,8 +67,6 @@ class Network_State:
         For the NTC rule, all edges start at the resistance corresponding to
         ``initial_temperature`` below; supplied resistance and noise are ignored.
         """
-        self._update_value_snapshots.clear()
-        self._last_update_snapshot_t = None
         if BigClass.Variabs.R_update == "deltaR_NTC":
             BigClass.Variabs.dt = BigClass.Variabs.dt_upper
             BigClass.Sprvsr.dt_in_t.fill(BigClass.Variabs.dt_upper)
@@ -315,19 +311,7 @@ class Network_State:
                 latest_update_values = (BigClass.Sprvsr.input_update_in_t[-1], BigClass.Sprvsr.extraInput_update_in_t[-1],
                                         BigClass.Sprvsr.output_update_in_t[-1], BigClass.Sprvsr.extraOutput_update_in_t[-1],
                                         BigClass.Sprvsr.inter_update_in_t[-1])
-            if self._last_update_snapshot_t != self.t:
-                self._update_value_snapshots.append(tuple(np.asarray(values, dtype=float).copy()
-                                                          for values in latest_update_values))
-                if len(self._update_value_snapshots) > BigClass.Sprvsr.batch_size:
-                    del self._update_value_snapshots[:-BigClass.Sprvsr.batch_size]
-                self._last_update_snapshot_t = self.t
-
-            if self.t % BigClass.Sprvsr.batch_size == 0:
-                recent_snapshots = self._update_value_snapshots[-BigClass.Sprvsr.batch_size:]
-                update_values = tuple(np.mean(np.stack([snapshot[index] for snapshot in recent_snapshots]), axis=0)
-                                      for index in range(len(latest_update_values)))
-            else:
-                update_values = latest_update_values
+            update_values = latest_update_values
 
             if training_scheme == 'Adjoint_current_noIn':
                 nodes_tuple = (np.array([], dtype=int), np.array([], dtype=int), BigClass.Strctr.ground_nodes_arr)
@@ -419,12 +403,8 @@ class Network_State:
         """
         Calculate and record the next resistances of all edges.
 
-        The material remains unchanged within a batch. At the batch boundary,
-        ``solve_flow_given_modality`` has solved the update modality using the
-        mean update-node values for the batch, and this method applies the
-        configured material rule once to that averaged update state. Thus
-        ``R_in_t`` still receives one entry per training update, including the
-        unchanged entries within a batch.
+        The training loop calls this once per completed batch, after the
+        sample gradients have been summed into one update-modality state.
 
         inputs:
         BigClass: Class instance containing User_Variables, Network_Structure, etc.
@@ -432,12 +412,6 @@ class Network_State:
         outputs:
         R_vec  - [NE] array of resistivities
         """
-        if self.t % BigClass.Sprvsr.batch_size:
-            self.R_in_t.append(self.R_in_t[-1].copy())
-            if BigClass.Variabs.R_update == "deltaR_NTC":
-                self.T_in_t.append(self.T_in_t[-1].copy())
-            return
-
         R_vec: NDArray[np.float_] = self.R_in_t[-1]
         history_length = len(self.R_in_t)
         delta_p: NDArray[np.float_] = self.u * R_vec
