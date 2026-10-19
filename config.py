@@ -112,7 +112,7 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 2
-    iterations: int = 3200
+    iterations: int = 120
 
     cap_Q: bool = True
     T_max: float = 415.0
@@ -122,7 +122,7 @@ class SupervisorConfig:
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.02 # deltaR_NTC
+            alpha = 0.3 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0
@@ -146,12 +146,12 @@ class SupervisorConfig:
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    normalize_loss = True
-    # normalize_loss = False
+    # normalize_loss = True
+    normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal_alpha: bool = True
-    # anneal_alpha: bool = False
+    # anneal_alpha: bool = True
+    anneal_alpha: bool = False
     anneal_dt: bool = False
     # anneal_stay_sample: bool = True
     anneal_stay_sample: bool = False
