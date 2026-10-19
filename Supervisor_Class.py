@@ -97,6 +97,8 @@ class Supervisor:
         self.output_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.Nout)]
         self.extraOutput_update_in_t: List[NDArray[np.float_]] = [0.5 * np.ones(Strctr.extraNout)]
         self.adjoint_output: NDArray[np.float_] = np.zeros(Strctr.Nout, dtype=float)
+        self.grad_loss_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NE), dtype=float)
+        self.grad_loss_vec_norm_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NE), dtype=float)
         self.update_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_source_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NN), dtype=float)
@@ -508,11 +510,13 @@ class Supervisor:
                                                                    Strctr.ground_nodes_arr, loss_for_gradient,
                                                                    parameter="resistance")
             self.grad_loss_vec = grad_loss_vec
+            self.grad_loss_vec_in_t[t] = self.grad_loss_vec
             if Strctr.frozen_ground:
                 self.grad_loss_vec[Strctr.ground_edges] = 0
             grad_norm = np.linalg.norm(grad_loss_vec)
             grad_loss_vec_norm = grad_loss_vec / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_vec)
             self.grad_loss_vec_norm = grad_loss_vec_norm
+            self.grad_loss_vec_norm_in_t[t] = self.grad_loss_vec_norm
             if self.training_scheme == 'BEASTAL':
                 desired_edge_update = -self.alpha * (grad_loss_vec_norm if self.normalize_loss else grad_loss_vec)
                 if self.control == "pressure":
