@@ -59,6 +59,10 @@ class VariablesConfig:
     G_T: float = R_parallel * 3.5 * 1e-3   # thermal conductance [W/K] physical one
     # G_T: float = 7 * 1e-3   # quick
     # G_T: float = 3.5 * 1e-4   # small
+    k_B: float = 1.380649e-23  # Boltzmann constant [J/K] for Johnson-Nyquist thermal noise
+    # f_cutoff: float = 300e6  # [Hz] cutoff frequency due to parasitic capacitance, for Johnson-Nyquist thermal noise
+    # f_cutoff: float = 0  # [Hz] cutoff frequency due to parasitic capacitance, for Johnson-Nyquist thermal noise
+    C: float = 1e-18  # [F] parasitic capacitance, for Johnson-Nyquist thermal noise
     B: float = 4100  # [K]
     R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
     T_room: float = 298.15  # [K]
@@ -118,7 +122,7 @@ class SupervisorConfig:
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.1 # deltaR_NTC
+            alpha = 0.05 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0

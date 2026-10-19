@@ -35,6 +35,10 @@ class Network_State:
         self.t: int = 0  # number of calculated training updates, including updates buffered in a batch
         self.p: NDArray[np.float_] = array([])  # pressure
         self.u: NDArray[np.float_] = array([])  # flow rate
+        self.f_cutoff: NDArray[np.float_] = np.zeros(BigClass.Strctr.NE, dtype=float)
+        self.thermal_current_noise: NDArray[np.float_] = np.zeros(BigClass.Strctr.NE, dtype=float)
+        self.thermal_voltage_noise: NDArray[np.float_] = np.zeros(BigClass.Strctr.NE, dtype=float)
+        self.delta_p: NDArray[np.float_] = np.zeros(BigClass.Strctr.NE, dtype=float)
         self.p_adjoint: NDArray[np.float_] = array([])  # latest Adjoint_pressure state
         self.u_adjoint: NDArray[np.float_] = array([])  # latest Adjoint_pressure edge flows
         # "measurement" modality
@@ -237,6 +241,7 @@ class Network_State:
                 raise ValueError("Cannot re-solve the flow before boundary conditions have been set")
             self.K_vec = matrix_functions.K_from_R(self.R_in_t[-1])
             self.p, self.u = solve.solve_flow(BigClass.Strctr, self.CstrTuple, self.K_vec)
+            self.add_thermal_noise(BigClass)
             return
 
         def source_vector(*node_value_pairs: tuple[NDArray[np.int_], NDArray[np.float_]]) -> NDArray[np.float_]:
@@ -373,6 +378,7 @@ class Network_State:
         self.K_vec = matrix_functions.K_from_R(self.R_in_t[-1])  # calculate conductivities
 
         self.p, self.u = solve.solve_flow(BigClass.Strctr, self.CstrTuple, self.K_vec)
+        self.add_thermal_noise(BigClass)
         if modality == 'adjoint':
             self.p_adjoint = self.p.copy()
             self.u_adjoint = self.u.copy()
@@ -394,6 +400,20 @@ class Network_State:
                 self.p_in_t.append(copy.copy(self.p[:BigClass.Strctr.NN].ravel()))
                 self.extraOutput_in_t.append(self.extraOutput)
                 self.inter_in_t.append(self.inter)
+
+    def add_thermal_noise(self, BigClass: "Big_Class") -> None:
+        """Add one Johnson-Nyquist draw per edge using its RC cutoff and derive the equivalent voltage noise."""
+        R = np.asarray(self.R_in_t[-1], dtype=float)
+        if BigClass.Variabs.R_update == "deltaR_NTC":
+            T = self.T_from_R(BigClass, R)
+        else:
+            T = np.full(BigClass.Strctr.NE, BigClass.Variabs.T_room, dtype=float)
+        self.f_cutoff = 1 / (2 * np.pi * R * BigClass.Variabs.C)
+        current_variance = 4 * BigClass.Variabs.k_B * T * self.f_cutoff / R
+        self.thermal_current_noise = np.random.normal(0.0, np.sqrt(current_variance), BigClass.Strctr.NE)
+        self.thermal_voltage_noise = self.thermal_current_noise * R
+        self.u = np.asarray(self.u, dtype=float).reshape(-1) + self.thermal_current_noise
+        self.delta_p = self.u * R
 
     def update_Rs(self, BigClass: "Big_Class", delta_K: Optional[NDArray[np.float_]] = None) -> None:
         """

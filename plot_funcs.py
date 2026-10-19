@@ -100,7 +100,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
         ax1.plot(BigClass.Sprvsr.loss_scalar_in_t[1:])
     # ax1.plot(np.mean(np.mean(np.abs(BigClass.Sprvsr.loss_in_t[1:]), axis=1), axis=1))
     ax1.set_yscale('log')
-    ax1.set_ylim(5e-5, 1e1)
+    ax1.set_ylim(5e-4, 5)
     ax1.set_title(r'$\|\mathcal{L}\|$')
     ax1.set_xlabel('t')
 
@@ -137,8 +137,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
                              u_reordered=BigClass.NET.u_reordered,
                              p_reordered=BigClass.NET.p_reordered,
                              ax=ax4,  # Pass the subplot axis
-                             show=False
-                             )
+                             show=False)
         else:
             print('no NET assigned in input')
 

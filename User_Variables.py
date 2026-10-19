@@ -25,13 +25,17 @@ class User_Variables:
         self.R_min: float = Variabs.R_min
         self.reset_thresh_b: float = 1e4
         self.reset_thresh_s: float = -1e4
+        if Variabs.k_B < 0 or Variabs.C <= 0:
+            raise ValueError("k_B must be non-negative and C must be positive")
+        self.k_B: float = Variabs.k_B
+        self.C: float = Variabs.C
+        self.T_room: float = Variabs.T_room
 
         if self.R_update in {"deltaR_propto_dp_decay", "deltaR_propto_dp_nonlin_decay"}:
             self.decay: float = Variabs.decay_R
         elif self.R_update == "deltaR_NTC":
             self.C_T: float = Variabs.C_T
             self.G_T: float = Variabs.G_T
-            self.T_room: float = Variabs.T_room
             self.R_25: NDArray[np.float_] = np.random.normal(Variabs.R_25, Variabs.noise_to_R_25, Strctr.NE)
             self.B: NDArray[np.float_] = np.random.normal(Variabs.B, Variabs.noise_to_B, Strctr.NE)
             self.maximal_current: float = Variabs.maximal_current
