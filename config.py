@@ -12,9 +12,10 @@ from numpy.typing import NDArray
 # Relevant to all
 # -----------------------------
 
-R_UPDATE = "deltaR_NTC"
+# R_UPDATE = "deltaR_NTC"
 # R_UPDATE = "deltaR_propto_dp_nonlin"
 # R_UPDATE = "deltaR_propto_dp"
+R_UPDATE = "grad_desc"
 
 # -----------------------------
 # Networ Structure
@@ -111,8 +112,8 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
-    batch_size: int = 2
-    iterations: int = 120
+    batch_size: int = 16
+    iterations: int = 1020
 
     cap_Q: bool = True
     T_max: float = 415.0
@@ -122,7 +123,7 @@ class SupervisorConfig:
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.3 # deltaR_NTC
+            alpha = 0.005 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0
@@ -162,7 +163,9 @@ class SupervisorConfig:
     noise_to_extra: bool = False
     loss_type: str = "MSE"
     print_every: int = iterations
-    calculate_cosine_sim: bool = False
+    calculate_cosine_sim: bool = True
+    calculate_every: int = int(iterations/60)
+    plot_every: int = calculate_every
 
     # M_values: NDArray[np.float_] = field(
     #     default_factory=lambda: np.array([2 / 4, 1 / 4, 0.1, 0.35, 0.75, 0.04])

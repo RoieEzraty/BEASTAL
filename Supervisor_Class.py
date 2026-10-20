@@ -62,6 +62,10 @@ class Supervisor:
         self.loss_type: str = Sprvsr.loss_type
         self.print_every: int = Sprvsr.print_every
         self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim
+        self.calculate_every: int = Sprvsr.calculate_every
+        self.plot_every: int = Sprvsr.plot_every
+        if self.calculate_every < 1 or self.plot_every < 1 or self.plot_every % self.calculate_every:
+            raise ValueError("calculate_every and plot_every must be positive, with plot_every a multiple of calculate_every")
         self.alpha_scale_nonlin: float = Sprvsr.alpha_scale_nonlin
         self.cap_Q: bool = Sprvsr.cap_Q
         self.T_max: float = Sprvsr.T_max
@@ -105,6 +109,11 @@ class Supervisor:
         self.update_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_source_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NN), dtype=float)
+        cosine_samples = self.iterations // self.calculate_every if self.calculate_cosine_sim else 0
+        self.cosine_t: NDArray[np.int_] = self.calculate_every * np.arange(1, cosine_samples+1)
+        self.delta_R_GD_in_t: NDArray[np.float_] = np.zeros((cosine_samples, Strctr.NE), dtype=float)
+        self.delta_R_BEASTAL_in_t: NDArray[np.float_] = np.zeros((cosine_samples, Strctr.NE), dtype=float)
+        self.cosine_similarity_in_t: NDArray[np.float_] = np.full(cosine_samples, np.nan)
 
     def assign_alpha(self, alpha: float, Variabs: "User_Variables") -> None:
         """Assign the learning rate, including nonlinear-rule scaling."""
@@ -325,6 +334,11 @@ class Supervisor:
             else:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
         if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+            # # inject minus input currents, omit later!
+            # if self.training_scheme == 'BEASTAL_NTC':
+            #     self.input_update_nxt = -delta    
+            # else:
+            #     self.input_update_nxt = delta
             self.input_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
             self.input_update_nxt = input_update + delta
@@ -420,6 +434,11 @@ class Supervisor:
                 loss_multip = loss[0]/np.linalg.norm(loss[0]) if self.normalize_loss else loss[0]
                 delta = self.alpha * State.output * loss_multip
         if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+            # # inject inverse current in outputs - omit later!
+            # if self.training_scheme == 'BEASTAL_NTC':
+            #     self.output_update_nxt = -delta    
+            # else:
+            #     self.output_update_nxt = delta
             self.output_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp']:
             self.output_update_nxt = output_update + delta
@@ -587,31 +606,8 @@ class Supervisor:
                     # WHAT IT ACTUALLY SHOULD BE 
                     previous_current = np.matmul(Strctr.CM, self.update_vec)  # forestall inertia by Codex Sep11
                     self.beta =  previous_current**2  # forestall inertia by Codex Sep11
-                # self.beta = 1.0*(np.matmul(Strctr.DM, self.update_vec))**2  # good concoction Sep11
-                # self.beta = 1.0*np.sign(grad_loss_over_batch_norm) * (np.matmul(Strctr.DM, self.update_vec))**2
-
+                
                 # # zero beta if loss changes sign to let thermal equilibrium dictate resistances
-                # reset_edges = np.zeros(Strctr.NE, dtype=bool)
-                # if len(self.loss_in_t) > 1:
-                    # # Codex suggesiton 4pm
-                    # changed_output_nodes = Strctr.output_nodes_arr[np.asarray(self.loss_in_t[-2])[0].ravel() *
-                    #                                                np.asarray(self.loss_in_t[-1])[0].ravel()<0]
-                    # reset_edges = (np.isin(Strctr.EI, changed_output_nodes) | np.isin(Strctr.EJ, changed_output_nodes))
-                    # self.beta[reset_edges] = 0.0 * self.beta[reset_edges]
-
-                    # # # Codex suggestion 5pm
-                    # previous_loss = np.asarray(self.loss_in_t[-2])[0].ravel()
-                    # current_loss = np.asarray(self.loss_in_t[-1])[0].ravel()
-
-                    # approaching = np.abs(current_loss) < np.abs(previous_loss)
-                    # retention = np.ones_like(current_loss)
-
-                    # retention[approaching] = ( np.abs(current_loss[approaching]) / (np.abs(previous_loss[approaching]) + 1e-12)
-                    #                           ) ** (1/3)
-
-                    # for output_i, output_node in enumerate(Strctr.output_nodes_arr):
-                    #     output_edges = (Strctr.EI == output_node) | (Strctr.EJ == output_node)
-                    #     self.beta[output_edges] *= retention[output_i]
                 # if len(self.loss_in_t)>1:
                 #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
                 Up_sqrd = self.alpha * (grad_loss_over_batch_norm if self.normalize_loss else grad_loss_over_batch) + self.beta
@@ -630,6 +626,8 @@ class Supervisor:
                         for idx in BigClass.Strctr.inter_nodes_arr:
                             update_vec = np.insert(update_vec, idx, 0)
                 elif self.control == "current":
+                    # CM_dagger maps the desired edge-current update to the least-squares node-current command directly.
+                    # The grounded node supplies the return current during the physical solve.
                     update_vec = np.matmul(Strctr.CM_dagger, Up)
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
@@ -640,9 +638,19 @@ class Supervisor:
             self.Q_max: float = float(np.min(self.Q_max_per_edge))
             update_vec = np.clip(update_vec, -self.Q_max, self.Q_max)
         if self.control == "current":
-            # CM_dagger maps the desired edge-current update to the least-squares node-current command directly.
-            # The grounded node supplies the return current during the physical solve.
+            # # demean - omit later!
+            # update_nodes = np.concatenate((Strctr.input_nodes_arr, Strctr.output_nodes_arr))
+            # update_size = np.linalg.norm(update_vec[update_nodes])
+
+            # update_vec[update_nodes] -= np.mean(update_vec[update_nodes])
+            # demeaned_size = np.linalg.norm(update_vec[update_nodes])
+
+            # if demeaned_size > 0:
+            #     update_vec[update_nodes] *= update_size / demeaned_size
+
+            # leave this
             self.update_source_vec = update_vec.copy()
+
         self.update_vec = update_vec
         update_index = State.t - 1
         if not 0 <= update_index < self.iterations:
