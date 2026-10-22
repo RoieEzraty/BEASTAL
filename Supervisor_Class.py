@@ -61,6 +61,7 @@ class Supervisor:
         self.noise_to_extra: bool = Sprvsr.noise_to_extra
         self.loss_type: str = Sprvsr.loss_type
         self.print_every: int = Sprvsr.print_every
+        # self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim and self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'}
         self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim
         self.calculate_every: int = Sprvsr.calculate_every
         self.plot_every: int = Sprvsr.plot_every
@@ -109,8 +110,11 @@ class Supervisor:
         self.update_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_source_vec: NDArray[np.float_] = np.zeros(Strctr.NN, dtype=float)
         self.update_vec_in_t: NDArray[np.float_] = np.zeros((self.iterations, Strctr.NN), dtype=float)
-        cosine_samples = self.iterations // self.calculate_every if self.calculate_cosine_sim else 0
-        self.cosine_t: NDArray[np.int_] = self.calculate_every * np.arange(1, cosine_samples+1)
+        periodic_cosine_t = self.calculate_every * np.arange(1, self.iterations // self.calculate_every + 1)
+        if periodic_cosine_t.size and periodic_cosine_t[0] == 1:
+            periodic_cosine_t = periodic_cosine_t[1:]
+        self.cosine_t: NDArray[np.int_] = np.concatenate(([0], periodic_cosine_t)).astype(int) if self.calculate_cosine_sim else np.array([], dtype=int)
+        cosine_samples = self.cosine_t.size
         self.delta_R_GD_in_t: NDArray[np.float_] = np.zeros((cosine_samples, Strctr.NE), dtype=float)
         self.delta_R_BEASTAL_in_t: NDArray[np.float_] = np.zeros((cosine_samples, Strctr.NE), dtype=float)
         self.cosine_similarity_in_t: NDArray[np.float_] = np.full(cosine_samples, np.nan)
@@ -320,7 +324,7 @@ class Supervisor:
         loss = self.loss_in_t[-1]
         input_update = self.input_update_in_t[-1]
         input_drawn = self.input_drawn_in_t[-1]
-        if self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             update_values = self.update_source_vec if self.control == "current" else self.update_vec
             delta = update_values[BigClass.Strctr.input_nodes_arr]
         else:
@@ -333,7 +337,7 @@ class Supervisor:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
             else:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
-        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             # # inject minus input currents, omit later!
             # if self.training_scheme == 'BEASTAL_NTC':
             #     self.input_update_nxt = -delta    
@@ -361,7 +365,7 @@ class Supervisor:
         loss = self.loss_in_t[-1]
         extraInput_update = self.extraInput_update_in_t[-1]
         extraInput = self.extraInput_in_t[-1]
-        if self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             update_values = self.update_source_vec if self.control == "current" else self.update_vec
             delta = update_values[BigClass.Strctr.extraInput_nodes_arr]
         elif self.use_p_tag:
@@ -369,7 +373,7 @@ class Supervisor:
             delta = (extraInput-extraInput_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = extraInput * self.alpha * np.mean(loss[0])
-        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             self.extraInput_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraInput_update_nxt = extraInput_update - delta
@@ -392,14 +396,14 @@ class Supervisor:
         loss = self.loss_in_t[-1]
         inter_update = self.inter_update_in_t[-1]
         inter = State.inter_in_t[-1]
-        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             delta = self.update_source_vec[BigClass.Strctr.inter_nodes_arr]
         elif self.use_p_tag:
             inter_prev = State.inter_in_t[-2]
             delta = (inter-inter_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = inter * self.alpha * np.mean(loss[0])
-        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             self.inter_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.inter_update_nxt = inter_update - delta
@@ -421,7 +425,7 @@ class Supervisor:
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
-        if self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn']:
+        if self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn']:
             update_values = self.update_source_vec if self.control == "current" else self.update_vec
             delta = update_values[BigClass.Strctr.output_nodes_arr]
         else:
@@ -433,7 +437,7 @@ class Supervisor:
             else:
                 loss_multip = loss[0]/np.linalg.norm(loss[0]) if self.normalize_loss else loss[0]
                 delta = self.alpha * State.output * loss_multip
-        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             # # inject inverse current in outputs - omit later!
             # if self.training_scheme == 'BEASTAL_NTC':
             #     self.output_update_nxt = -delta    
@@ -461,14 +465,14 @@ class Supervisor:
         R_update = BigClass.Variabs.R_update
         loss = self.loss_in_t[-1]
         extraOutput_update = copy.copy(self.extraOutput_update_in_t[-1])
-        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             delta = self.update_source_vec[BigClass.Strctr.extraOutput_nodes_arr]
         elif self.use_p_tag:
             extraOutput_prev = State.extraOutput_in_t[-2]
             delta = (State.extraOutput-extraOutput_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = State.extraOutput * self.alpha * np.mean(loss[0])
-        if self.control == "current" and self.training_scheme in ['GD_like', 'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
             self.extraOutput_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraOutput_update_nxt = extraOutput_update + delta
@@ -489,19 +493,7 @@ class Supervisor:
         in_nodes = copy.copy(BigClass.Strctr.input_nodes_arr)
         out_nodes = copy.copy(BigClass.Strctr.output_nodes_arr)
         ground_nodes = copy.copy(BigClass.Strctr.ground_nodes_arr)
-        if self.training_scheme == 'GD_like':
-            L_vec = np.zeros(BigClass.Strctr.NN)
-            L_vec[out_nodes] = self.loss
-            delta_p = np.matmul(BigClass.Strctr.DM, State.p[:BigClass.Strctr.NN]).T
-            delta_p[delta_p == 0] = 10**(-9)
-            one_over_delta_p_norm = 1 / delta_p / np.linalg.norm(1 / delta_p)
-            C_vec = np.matmul(BigClass.Strctr.RM, L_vec) * one_over_delta_p_norm
-            if BigClass.Variabs.R_update in ['deltaR_propto_dp_nonlin', 'deltaR_propto_dp_nonlin_decay']:
-                C_vec_norm = C_vec[0] / np.linalg.norm(C_vec[0])
-                update_vec = -self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec_norm)
-            else:
-                update_vec = -self.alpha * np.matmul(BigClass.Strctr.DM_dagger, C_vec[0])
-        elif self.training_scheme == 'Adjoint_pressure':
+        if self.training_scheme == 'Adjoint_pressure':
             Strctr = BigClass.Strctr
             if not State.p_in_t or State.p_adjoint.size < Strctr.NN:
                 raise ValueError("Adjoint_pressure requires measurement and adjoint solves before calc_update_vals_vec")
@@ -673,15 +665,17 @@ class Supervisor:
         out_nodes = copy.copy(BigClass.Strctr.output_nodes_arr)
         ground_nodes = copy.copy(BigClass.Strctr.ground_nodes_arr)
         sample_index = len(self.loss_in_t) - 1 if tb is None else tb
-        if self.control == "pressure":
+        if self.training_scheme == 'grad_desc':
+            Strctr = BigClass.Strctr
+            desired = np.asarray(self.desired_in_t[sample_index], dtype=float)
+            _, grad_loss_vec = State.dK_grad_desc(Strctr, BigClass.Variabs.dK_step, desired, func='MSE')
+        elif self.control == "pressure":
             Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
             p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])
             grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr, self.loss)
 
         else:  # current controlled
             Strctr = BigClass.Strctr
-            if not hasattr(Strctr, "CM_dagger") or not hasattr(Strctr, "CM"):
-                raise ValueError("Current-controlled BEASTAL requires Strctr.build_current_injection()")
             # Strctr.build_current_injection(State.R_in_t[-1])  # CHEATING, you don't really know conductances
             Strctr.build_current_injection()  # BEASTAL
             p = State.p[:Strctr.NN]

@@ -399,7 +399,7 @@ class Network_State:
         self.u = np.asarray(self.u, dtype=float).reshape(-1) + self.thermal_current_noise
         self.delta_p = self.u * R
 
-    def update_Rs(self, BigClass: "Big_Class", delta_K: Optional[NDArray[np.float_]] = None) -> None:
+    def update_Rs(self, BigClass: "Big_Class") -> None:
         """
         Calculate and record the next resistances of all edges.
 
@@ -485,15 +485,19 @@ class Network_State:
             # self.R_in_t.append(R_nxt)
             self.T_in_t.append(T_nxt)
         elif BigClass.Variabs.R_update == 'grad_desc':
-            if delta_K is None:
-                raise ValueError("delta_K must be supplied for gradient-descent resistance updates")
+            batch_end = self.t * BigClass.Sprvsr.batch_size
+            batch_start = batch_end - BigClass.Sprvsr.batch_size
+            dcost_dK = np.mean(BigClass.Sprvsr.grad_loss_vec_in_t[batch_start:batch_end], axis=0)
+            BigClass.Sprvsr.grad_loss_over_batch = dcost_dK
+            delta_K = -BigClass.Sprvsr.alpha * dcost_dK
             K_vec = matrix_functions.K_from_R(self.R_in_t[-1])
-            K_vec_nxt = K_vec + BigClass.Sprvsr.alpha * delta_K
+            K_vec_nxt = np.clip(K_vec + delta_K, 1e-12, None)
             R_nxt = 1/K_vec_nxt
             if BigClass.Variabs.normalize_step:
                 delta_R = R_nxt - self.R_in_t[-1]
-                delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
-                R_nxt = self.R_in_t[-1] + delta_R_norm
+                delta_R_size = np.linalg.norm(delta_R)
+                if delta_R_size > 0:
+                    R_nxt = self.R_in_t[-1] + BigClass.Sprvsr.alpha * delta_R / delta_R_size
             self.R_in_t.append(R_nxt)
         elif BigClass.Variabs.R_update == 'deltaR_propto_Power':  # delta_R propto Power dissipation dp*Q
             self.R_in_t.append(R_vec + BigClass.Variabs.gamma * self.u * delta_p * np.sign(delta_p))
@@ -522,9 +526,9 @@ class Network_State:
         self.R_in_t[-1][self.R_in_t[-1] < 10**-12] = 10**-12
 
     def dK_grad_desc(self, Strctr: "Network_Structure", dK_step: float,
-                     p_desired: NDArray[np.float_], func: str) -> NDArray[np.float_]:
+                     p_desired: NDArray[np.float_], func: str) -> Tuple[NDArray[np.float_], NDArray[np.float_]]:
         """
-        Add desc
+        Numerically calculate the negative cost gradient and cost gradient with respect to conductance.
 
         inputs:
         BigClass  - class instance including the user variables (Variabs), network structure (Strctr) and networkx (NET)
@@ -540,17 +544,19 @@ class Network_State:
         func      - str
 
         outputs:
-        cost: np.float, MSE or mean abs between maesured and desired outputs
+        delta_K  - negative cost gradient, suitable as a descent direction
+        dcost_dK - cost gradient with respect to edge conductances
         """
+        base_cost = self.calc_GD_cost(Strctr, p_desired, K_vec_for_GD=self.K_vec, mod='for_grad_desc', func=func)
         GD_dcost_vec = np.zeros([np.size(self.K_vec)])
         for m in range(np.size(self.K_vec)):
             dK_vec = np.zeros([np.size(self.K_vec)])
             dK_vec[m] = dK_step
             GD_dcost_vec[m] = self.calc_GD_cost(Strctr, p_desired, K_vec_for_GD=self.K_vec+dK_vec,
                                                 mod='for_grad_desc', func=func)
-        dcost_dK = (GD_dcost_vec - self.GD_cost) / dK_step
+        dcost_dK = (GD_dcost_vec - base_cost) / dK_step
         delta_K = -dcost_dK
-        return delta_K
+        return delta_K, dcost_dK
 
     def calc_GD_cost(self, Strctr: "Network_Structure", p_desired: NDArray[np.float_],
                      K_vec_for_GD: Optional[NDArray[np.float_]] = None,
@@ -641,10 +647,6 @@ class Network_State:
         flow is solved again with the same boundary conditions so that subsequent Joule heating uses the electrically
         equilibrated edge drive.
         """
-        if euler_steps <= 0:
-            raise ValueError("euler_steps must be positive")
-        if BigClass.Variabs.dt < 0:
-            raise ValueError("Variabs.dt must be non-negative")
         if (delta_p is None) == (Q is None):
             raise ValueError("Supply exactly one of delta_p or Q")
 

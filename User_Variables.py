@@ -25,8 +25,6 @@ class User_Variables:
         self.R_min: float = Variabs.R_min
         self.reset_thresh_b: float = 1e4
         self.reset_thresh_s: float = -1e4
-        if Variabs.k_B < 0 or Variabs.C <= 0:
-            raise ValueError("k_B must be non-negative and C must be positive")
         self.k_B: float = Variabs.k_B
         self.C: float = Variabs.C
         self.T_room: float = Variabs.T_room
@@ -50,6 +48,8 @@ class User_Variables:
             self.hyst_thresh: float = Variabs.hysteresis
         else:
             self.hysteresis = False
+
+        self.dK_step: float = Variabs.dK_step
 
         self.p_thresh: float = 0.1
         self.bc_noise: float = 0.0

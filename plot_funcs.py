@@ -261,7 +261,7 @@ def animate_delta_R_comparison(t: NDArray[np.int_], delta_R_BEASTAL: NDArray[np.
     GD_normalized = np.divide(delta_R_GD, GD_norm, out=np.zeros_like(delta_R_GD), where=GD_norm > 0)
     fig, ax = plt.subplots(figsize=(7, 4))
     edge = np.arange(delta_R_BEASTAL.shape[1])
-    line_BEASTAL, = ax.plot(edge, BEASTAL_normalized[frame_indices[0]], 'o-', label='BEASTAL')
+    line_BEASTAL, = ax.plot(edge, BEASTAL_normalized[frame_indices[0]], 'o-', label='applied update')
     line_GD, = ax.plot(edge, GD_normalized[frame_indices[0]], 'o--', label='gradient descent')
     title = ax.set_title(f't = {t[frame_indices[0]]}')
     ax.axhline(0, color='k', linewidth=1.2)

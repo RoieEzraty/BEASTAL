@@ -125,6 +125,3 @@ class Network_Structure:
         self.CM: NDArray[np.float_] = conductances[:, None] * self.DM @ laplacian_dagger
         self.CM_dagger: NDArray[np.float_] = np.linalg.pinv(self.CM)
 
-    def build_RM(self) -> None:
-        """Build the repetition/selection matrix for this structure's dimensions."""
-        self.RM: NDArray[np.int_] = matrix_functions.build_rep_sel(self.Nin, self.Nout, self.DM)

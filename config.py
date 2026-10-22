@@ -71,11 +71,14 @@ class VariablesConfig:
     noise_to_B: float = 0.0  # [K]
     noise_to_R_25: float = 0.0  # [Ohm]
     dt_upper: float = 0.06  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.02  # [s] waiting time at the end of training
+    dt_lower: float = 0.01  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
     euler_steps: int = 40  # steps during euler ODE solver.
     maximal_current: float = 1e-3  # [A]
+
+    # For numerically calculating GD
+    dK_step: float = 1e-8
 
 # -----------------------------
 # Networkx python instance
@@ -107,34 +110,37 @@ class SupervisorConfig:
         elif control == "current":
             training_scheme: str = "BEASTAL_NTC"
             # training_scheme: str = "PIECETAL_NTC"
+    elif R_UPDATE == "grad_desc":
+        training_scheme: str = "grad_desc"
     else:
         training_scheme: str = "BEASTAL"
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
-    batch_size: int = 16
-    iterations: int = 1020
+    batch_size: int = 30
+    iterations: int = 1800
 
     cap_Q: bool = True
     T_max: float = 415.0
     
-    if R_UPDATE == "deltaR_NTC":
+    if R_UPDATE in ["deltaR_NTC"]:
         if control == "pressure":
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.005 # deltaR_NTC
+            alpha = 0.02 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0
-    else:
-        if training_scheme == "BEASTAL":
-            if control == "current":
-                alpha: float = 15.0  # deltaR_propto_deltap
-            else:
-                alpha: float = 0.028  # deltaR_propto_deltap
+    elif R_UPDATE == "grad_desc":
+        alpha = 4.
+    elif training_scheme == "BEASTAL":
+        if control == "current":
+            alpha: float = 15.0  # deltaR_propto_deltap
         else:
-            alpha: float = 0.08   # Adjoint
+            alpha: float = 0.028  # deltaR_propto_deltap
+    elif training_scheme == "Adjoint_current_noIn":
+        alpha: float = 0.08   # Adjoint
     
     alpha_scale_nonlin: float = 20.0 * batch_size**(1/2.7)
     # alpha_scale_nonlin: float = 62.0
@@ -147,12 +153,12 @@ class SupervisorConfig:
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    # normalize_loss = True
-    normalize_loss = False
+    normalize_loss = True
+    # normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    # anneal_alpha: bool = True
-    anneal_alpha: bool = False
+    anneal_alpha: bool = True
+    # anneal_alpha: bool = False
     anneal_dt: bool = False
     # anneal_stay_sample: bool = True
     anneal_stay_sample: bool = False
@@ -164,7 +170,7 @@ class SupervisorConfig:
     loss_type: str = "MSE"
     print_every: int = iterations
     calculate_cosine_sim: bool = True
-    calculate_every: int = int(iterations/60)
+    calculate_every: int = int(iterations/80)
     plot_every: int = calculate_every
 
     # M_values: NDArray[np.float_] = field(
