@@ -61,7 +61,8 @@ class Supervisor:
         self.noise_to_extra: bool = Sprvsr.noise_to_extra
         self.loss_type: str = Sprvsr.loss_type
         self.print_every: int = Sprvsr.print_every
-        # self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim and self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'}
+        # self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim and self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 
+        #                                                                                            'PIECETAL_NTC'}
         self.calculate_cosine_sim: bool = Sprvsr.calculate_cosine_sim
         self.calculate_every: int = Sprvsr.calculate_every
         self.plot_every: int = Sprvsr.plot_every
@@ -113,7 +114,8 @@ class Supervisor:
         periodic_cosine_t = self.calculate_every * np.arange(1, self.iterations // self.calculate_every + 1)
         if periodic_cosine_t.size and periodic_cosine_t[0] == 1:
             periodic_cosine_t = periodic_cosine_t[1:]
-        self.cosine_t: NDArray[np.int_] = np.concatenate(([0], periodic_cosine_t)).astype(int) if self.calculate_cosine_sim else np.array([], dtype=int)
+        self.cosine_t: NDArray[np.int_] = np.concatenate(([0], periodic_cosine_t)).astype(int) if self.calculate_cosine_sim \
+                                                                                               else np.array([], dtype=int)
         cosine_samples = self.cosine_t.size
         self.delta_R_GD_in_t: NDArray[np.float_] = np.zeros((cosine_samples, Strctr.NE), dtype=float)
         self.delta_R_BEASTAL_in_t: NDArray[np.float_] = np.zeros((cosine_samples, Strctr.NE), dtype=float)
@@ -127,7 +129,8 @@ class Supervisor:
         self.alpha: float = self.alpha_initial
         self.alpha_in_t: NDArray[np.float_] = self.alpha_initial * np.ones(self.iterations)
 
-    def assign_M(self, config: ExperimentConfig, Strctr: "Network_Structure", Variabs: Optional["User_Variables"] = None) -> None:
+    def assign_M(self, config: ExperimentConfig, Strctr: "Network_Structure", 
+                 Variabs: Optional["User_Variables"] = None) -> None:
         """Build and optionally normalize the regression task matrix."""
         required_size = Strctr.Nin * Strctr.Nout
         configured_values = config.Sprvsr.M_values
@@ -239,7 +242,26 @@ class Supervisor:
             self.stay_sample_in_t[State.t] = self.stay_sample
 
     def calc_loss(self, State: "Network_State") -> None:
-        """Calculate and record the task loss for the current measurement."""
+        """Calculate and record task loss for the recent measurement.
+
+        Parameters
+        ----------
+        State Class
+
+        Returns
+        -------
+        None.
+            Stores the loss in ``self.loss`` and appends it to ``loss_in_t``.
+
+        Notes
+        -----
+        The loss is the signed residual ``desired - output`` for every output node, and is not normalized. 
+        ``use_p_tag==True`` - both the current and previous samples are stored, giving shape ``(2, Nout)``; 
+                              otherwise the shape is ``(1, Nout)``. 
+        ``include_Power==True`` is true, ``lam * Power_norm`` is added to each corresponding residual,
+                                where ``Power_norm`` is total network power divided by the mean squared input. 
+        Loss normalizations are applied in ``calc_loss_scalar``.
+        """
         if self.use_p_tag:
             if self.include_Power:
                 self.loss = functions.loss_fn_2samples(State.output, State.output_in_t[-2], State.desired, self.desired_in_t[-2],
@@ -257,9 +279,31 @@ class Supervisor:
         if not self.supress_prints:
             print('loss=', self.loss)
 
-    def calc_loss_scalar(self, State: "Network_State",
-                         Strctr: "Network_Structure", sample_count: int = 16) -> None:
-        """Calculate loss normalized by the initial network's first 16 samples."""
+    def calc_loss_scalar(self, State: "Network_State", Strctr: "Network_Structure", sample_count: int = 16) -> None:
+        """Calculate and store normalized scalar loss history.
+
+        Parameters
+        ----------
+        State        : Network_State
+        Strctr       : Network_Structure
+        sample_count : int, Maximum number of training samples used to establish MAE normalization scale
+
+        Returns
+        -------
+        None. 
+            Stores normalized per-measurement values in ``loss_scalar_in_t``, 
+            normalizes existing values in ``loss_scalar_in_t_over_batch``
+
+        Notes
+        -----
+        For each measurement, the scalar numerator is averaged over all sampled states (one or two, depending on the
+        loss function) and all output nodes:
+        ``loss_type == 'MAE'`` - mean absolute recorded error divided by the mean absolute error produced by the initial network
+                                 on the first ``sample_count`` training samples.
+        ``loss_type == 'MSE'`` - it is the mean squared recorded error divided by the mean squared desired output over the complete
+                                 ``desired_in_t`` history. Thus, it does not use the initial-network errors or ``sample_count``. 
+                                 The same denominator is applied to the batch-averaged scalar losses.
+        """
         sample_count = min(sample_count, len(self.X_train))
         if sample_count == 0:
             raise ValueError("Cannot normalize loss with an empty training dataset")
@@ -297,6 +341,7 @@ class Supervisor:
         elif self.loss_type == 'MSE':
             # denominator = np.mean(np.square(initial_losses))
             denominator = np.mean(np.mean(np.square(self.desired_in_t), axis=0), axis=0)
+            print('denominator=', denominator)
             self.loss_scalar_in_t = np.mean(np.mean(np.square(self.loss_in_t), axis=1), axis=1)
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
@@ -318,13 +363,29 @@ class Supervisor:
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
 
+    def calc_grad_loss_over_batch(self, t: int) -> None:
+        """Store the mean loss-gradient vector and its normalized form for batch ``t``."""
+        batch_start = t * self.batch_size
+        batch_end = batch_start + self.batch_size
+        self.grad_loss_over_batch = np.mean(self.grad_loss_vec_in_t[batch_start:batch_end], axis=0)
+        grad_norm = np.linalg.norm(self.grad_loss_over_batch)
+        self.grad_loss_over_batch_norm = self.grad_loss_over_batch / grad_norm if grad_norm > 0 \
+                                                                               else np.zeros_like(self.grad_loss_over_batch)
+
+    def calc_grad_desc_NTC_Q(self, BigClass: "Big_Class", R: NDArray[np.float_], T: NDArray[np.float_]) -> NDArray[np.float_]:
+        """Return independently prescribed edge currents that implement the stored resistance-gradient step."""
+        Q_sqrd_times_R = self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / (R*BigClass.Variabs.B) * self.grad_loss_R + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
+        return np.sqrt(np.maximum(Q_sqrd_times_R / R, 0.0))
+
     def update_input(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+                                                                                                 and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         input_update = self.input_update_in_t[-1]
         input_drawn = self.input_drawn_in_t[-1]
-        if self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if uses_update_vec:
             update_values = self.update_source_vec if self.control == "current" else self.update_vec
             delta = update_values[BigClass.Strctr.input_nodes_arr]
         else:
@@ -337,7 +398,7 @@ class Supervisor:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * (np.mean(loss[0]-loss[1])/np.linalg.norm(loss[0]-loss[1]))
             else:
                 delta = -(input_drawn-input_drawn_prev) * self.alpha * np.mean(loss[0]-loss[1])
-        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and uses_update_vec:
             # # inject minus input currents, omit later!
             # if self.training_scheme == 'BEASTAL_NTC':
             #     self.input_update_nxt = -delta    
@@ -362,10 +423,12 @@ class Supervisor:
     def update_extraInput(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next extra-input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+                                                                                                 and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         extraInput_update = self.extraInput_update_in_t[-1]
         extraInput = self.extraInput_in_t[-1]
-        if self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if uses_update_vec:
             update_values = self.update_source_vec if self.control == "current" else self.update_vec
             delta = update_values[BigClass.Strctr.extraInput_nodes_arr]
         elif self.use_p_tag:
@@ -373,7 +436,7 @@ class Supervisor:
             delta = (extraInput-extraInput_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = extraInput * self.alpha * np.mean(loss[0])
-        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and uses_update_vec:
             self.extraInput_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraInput_update_nxt = extraInput_update - delta
@@ -393,17 +456,19 @@ class Supervisor:
         """Calculate and record the next intermediate-node update value."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+                                                                                                 and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         inter_update = self.inter_update_in_t[-1]
         inter = State.inter_in_t[-1]
-        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and uses_update_vec:
             delta = self.update_source_vec[BigClass.Strctr.inter_nodes_arr]
         elif self.use_p_tag:
             inter_prev = State.inter_in_t[-2]
             delta = (inter-inter_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = inter * self.alpha * np.mean(loss[0])
-        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and uses_update_vec:
             self.inter_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.inter_update_nxt = inter_update - delta
@@ -423,9 +488,11 @@ class Supervisor:
         """Calculate and record the next output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+                                                                                                 and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
-        if self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC', 'Adjoint_current_noIn', 'Adjoint_pressure_noIn']:
+        if uses_update_vec or self.training_scheme in {'Adjoint_current_noIn', 'Adjoint_pressure_noIn'}:
             update_values = self.update_source_vec if self.control == "current" else self.update_vec
             delta = update_values[BigClass.Strctr.output_nodes_arr]
         else:
@@ -437,7 +504,7 @@ class Supervisor:
             else:
                 loss_multip = loss[0]/np.linalg.norm(loss[0]) if self.normalize_loss else loss[0]
                 delta = self.alpha * State.output * loss_multip
-        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and uses_update_vec:
             # # inject inverse current in outputs - omit later!
             # if self.training_scheme == 'BEASTAL_NTC':
             #     self.output_update_nxt = -delta    
@@ -463,16 +530,18 @@ class Supervisor:
         """Calculate and record the next extra-output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+                                                                                                 and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         extraOutput_update = copy.copy(self.extraOutput_update_in_t[-1])
-        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and uses_update_vec:
             delta = self.update_source_vec[BigClass.Strctr.extraOutput_nodes_arr]
         elif self.use_p_tag:
             extraOutput_prev = State.extraOutput_in_t[-2]
             delta = (State.extraOutput-extraOutput_prev) * self.alpha * np.mean(loss[0]-loss[1])
         else:
             delta = State.extraOutput * self.alpha * np.mean(loss[0])
-        if self.control == "current" and self.training_scheme in ['BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC']:
+        if self.control == "current" and uses_update_vec:
             self.extraOutput_update_nxt = delta
         elif R_update in ['R_propto_dp', 'R_propto_Q', 'R_propto_sqrt_dp', 'R_propto_Power', 'R_propto_Q_exp', 'beads']:
             self.extraOutput_update_nxt = extraOutput_update + delta
@@ -510,15 +579,8 @@ class Supervisor:
             update_vec = self.alpha * L_vec
         elif self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'}:  # same gradient, different update vectors
             Strctr = BigClass.Strctr_fict if self.control == "pressure" and BigClass.Strctr.Ninter > 0 else BigClass.Strctr
-            batch_end = State.t * self.batch_size
-            batch_start = batch_end - self.batch_size
-            grad_loss_over_batch = np.mean(self.grad_loss_vec_in_t[batch_start:batch_end], axis=0)
-            if Strctr.frozen_ground:
-                grad_loss_over_batch[Strctr.ground_edges] = 0
-            grad_norm = np.linalg.norm(grad_loss_over_batch)
-            grad_loss_over_batch_norm = grad_loss_over_batch / grad_norm if grad_norm > 0 else np.zeros_like(grad_loss_over_batch)
-            self.grad_loss_over_batch = grad_loss_over_batch
-            self.grad_loss_over_batch_norm = grad_loss_over_batch_norm
+            grad_loss_over_batch = self.grad_loss_over_batch
+            grad_loss_over_batch_norm = self.grad_loss_over_batch_norm
             if self.training_scheme == 'BEASTAL':
                 desired_edge_update = -self.alpha * (grad_loss_over_batch_norm if self.normalize_loss else grad_loss_over_batch)
                 if self.control == "pressure":
@@ -529,7 +591,6 @@ class Supervisor:
                 else:
                     update_vec = np.matmul(Strctr.CM_dagger, desired_edge_update)
                 self.desired_update_Q = -self.alpha * grad_loss_over_batch
-
             elif self.training_scheme == 'PIECETAL_NTC':
                 if self.control != 'current':
                     raise ValueError("PIECETAL_NTC requires current control")
@@ -555,12 +616,13 @@ class Supervisor:
                 selected_edges = np.array([edge_between(chosen_input, chosen_output), edge_between(chosen_input, ground),
                                            edge_between(chosen_output, ground)], dtype=int)
                 selected_nodes = np.array([chosen_input, chosen_output], dtype=int)
-                local_current_map = Strctr.CM[np.ix_(selected_edges, selected_nodes)]  # (3, 2): chosen input/output currents to the three selected edge currents
-                local_current_map_dagger = np.linalg.pinv(local_current_map)  # (2, 3): desired selected edge currents to chosen input/output currents
-                local_current_projection = local_current_map @ local_current_map_dagger  # (3, 3): project three requested edge currents onto the realizable two-dimensional subspace
+                local_current_map = Strctr.CM[np.ix_(selected_edges, selected_nodes)]  # (3, 2): chosen in/out currents to 3 edge currents
+                local_current_map_dagger = np.linalg.pinv(local_current_map)  # (2, 3): desired edge currents to chosen in/out currents
+                local_current_projection = local_current_map @ local_current_map_dagger  # (3, 3): project 3 requested edge currents onto realizable 2D subspace
                 selected_gradient = local_current_projection @ grad_loss_over_batch[selected_edges]
                 selected_norm = np.linalg.norm(selected_gradient)
-                selected_gradient_for_update = selected_gradient / selected_norm if self.normalize_loss and selected_norm > 0 else selected_gradient
+                selected_gradient_for_update = selected_gradient / selected_norm if self.normalize_loss and selected_norm > 0 \
+                                                                                 else selected_gradient
                 self.beta = (Strctr.CM @ self.update_vec)**2
                 Up_sqrd = np.zeros(Strctr.NE, dtype=float)
                 Up_sqrd[selected_edges] = self.alpha * selected_gradient_for_update + self.beta[selected_edges]
@@ -621,6 +683,16 @@ class Supervisor:
                     # CM_dagger maps the desired edge-current update to the least-squares node-current command directly.
                     # The grounded node supplies the return current during the physical solve.
                     update_vec = np.matmul(Strctr.CM_dagger, Up)
+        elif self.training_scheme == 'grad_desc':
+            if BigClass.Variabs.grad_desc_use == 'K':
+                grad_loss_k = self.grad_loss_over_batch
+                self.grad_loss_R = (-1/BigClass.State.R_in_t[-1]**2) * grad_loss_k
+            else:
+                self.grad_loss_R = self.grad_loss_over_batch
+            R = BigClass.State.R_in_t[-1]
+            T = BigClass.State.T_in_t[-1]
+            self.desired_update_Q = self.calc_grad_desc_NTC_Q(BigClass, R, T)
+            update_vec = self.update_vec_in_t[0]
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
         if self.control == "current" and self.cap_Q:
@@ -628,7 +700,10 @@ class Supervisor:
             Q_sqrd_max = BigClass.Variabs.G_T * (self.T_max - BigClass.Variabs.T_room) / R_at_T_max
             self.Q_max_per_edge: NDArray[np.float_] = np.asarray(np.sqrt(Q_sqrd_max), dtype=float)
             self.Q_max: float = float(np.min(self.Q_max_per_edge))
-            update_vec = np.clip(update_vec, -self.Q_max, self.Q_max)
+            if self.training_scheme == 'grad_desc':
+                pass
+            else:
+                update_vec = np.clip(update_vec, -self.Q_max, self.Q_max)
         if self.control == "current":
             # # demean - omit later!
             # update_nodes = np.concatenate((Strctr.input_nodes_arr, Strctr.output_nodes_arr))
@@ -668,7 +743,10 @@ class Supervisor:
         if self.training_scheme == 'grad_desc':
             Strctr = BigClass.Strctr
             desired = np.asarray(self.desired_in_t[sample_index], dtype=float)
-            _, grad_loss_vec = State.dK_grad_desc(Strctr, BigClass.Variabs.dK_step, desired, func='MSE')
+            if BigClass.Variabs.grad_desc_use == 'K':
+                _, grad_loss_vec = State.dK_grad_desc(Strctr, BigClass.Variabs.dK_step, desired, func='MSE')
+            elif BigClass.Variabs.grad_desc_use == 'R':
+                _, grad_loss_vec = State.dR_grad_desc(Strctr, BigClass.Variabs.dR_step, desired, func='MSE')
         elif self.control == "pressure":
             Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
             p = np.concatenate([State.p[in_nodes], State.p[out_nodes], State.p[ground_nodes]])

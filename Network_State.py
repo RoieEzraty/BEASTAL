@@ -472,27 +472,35 @@ class Network_State:
             if BigClass.Sprvsr.control == 'pressure':
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p=delta_p, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
-            elif BigClass.Sprvsr.control == 'current':
-                # # CHEATING - you can't use desired current
-                # print('CAUTION! update R is cheating!')
-                # T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q, 
-                #                                     euler_steps=BigClass.Variabs.euler_steps)
-                T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
+            else:  # current
+                # CHEATING - you can't use desired current
+                print('CAUTION! update R is cheating!')
+                T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
-            # LEGACY FIXED-EDGE-DRIVE MODE: comment out the working-state append above and the re-solve block in
-            # evolve_NTC_temperature, then uncomment the next two lines.
+                # T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
+                #                                     euler_steps=BigClass.Variabs.euler_steps)
+            # # LEGACY FIXED-EDGE-DRIVE MODE: comment out the working-state append above and the re-solve block in
+            # # evolve_NTC_temperature, then uncomment the next two lines.
             # R_nxt = self.R_from_T(BigClass, T_nxt)
             # self.R_in_t.append(R_nxt)
             self.T_in_t.append(T_nxt)
-        elif BigClass.Variabs.R_update == 'grad_desc':
-            batch_end = self.t * BigClass.Sprvsr.batch_size
-            batch_start = batch_end - BigClass.Sprvsr.batch_size
-            dcost_dK = np.mean(BigClass.Sprvsr.grad_loss_vec_in_t[batch_start:batch_end], axis=0)
-            BigClass.Sprvsr.grad_loss_over_batch = dcost_dK
+        elif BigClass.Variabs.R_update == 'grad_desc' and BigClass.Variabs.grad_desc_use == 'K':
+            dcost_dK = BigClass.Sprvsr.grad_loss_over_batch  # [loss/K]
             delta_K = -BigClass.Sprvsr.alpha * dcost_dK
             K_vec = matrix_functions.K_from_R(self.R_in_t[-1])
             K_vec_nxt = np.clip(K_vec + delta_K, 1e-12, None)
             R_nxt = 1/K_vec_nxt
+            if BigClass.Variabs.normalize_step:
+                delta_R = R_nxt - self.R_in_t[-1]
+                delta_R_size = np.linalg.norm(delta_R)
+                if delta_R_size > 0:
+                    R_nxt = self.R_in_t[-1] + BigClass.Sprvsr.alpha * delta_R / delta_R_size
+            self.R_in_t.append(R_nxt)
+        elif BigClass.Variabs.R_update == 'grad_desc' and BigClass.Variabs.grad_desc_use == 'R':
+            dcost_dR = BigClass.Sprvsr.grad_loss_over_batch  # [loss/K]
+            delta_R = -BigClass.Sprvsr.alpha * dcost_dR
+            R_vec = self.R_in_t[-1]
+            R_nxt = np.clip(R_vec + delta_R, 1e-12, None)
             if BigClass.Variabs.normalize_step:
                 delta_R = R_nxt - self.R_in_t[-1]
                 delta_R_size = np.linalg.norm(delta_R)
@@ -558,8 +566,42 @@ class Network_State:
         delta_K = -dcost_dK
         return delta_K, dcost_dK
 
+    def dR_grad_desc(self, Strctr: "Network_Structure", dR_step: float, p_desired: NDArray[np.float_],
+                     func: str) -> Tuple[NDArray[np.float_], NDArray[np.float_]]:
+            """
+            Numerically calculate the negative cost gradient and cost gradient with respect to conductance.
+    
+            inputs:
+            BigClass  - class instance including the user variables (Variabs), network structure (Strctr) and networkx (NET)
+                        and network state (State) class instances
+                        I will not go into everything used from there to save space here.
+            CstrTuple - Tuple consisting - Cstr_full - 2D array without last column, which is f from Rocks & Katifori 2018
+                                                       https://www.pnas.org/cgi/doi/10.1073/pnas.1806790116
+                                           Cstr -      Cstr_full without last line
+                                           f    -      constraint vector (Rocks and Katifori 2018) 1D np.arrays [NEdges]
+                                                       such that EI[i] is node connected to EJ[i] at certain edge
+            K_vec     - 1D np.array [NE] of conductivities (inverse of resistances)
+            p_desired - 1D np.array [Nout] of desired outputs given the inputs
+            func      - str
+    
+            outputs:
+            delta_R  - negative cost gradient, suitable as a descent direction
+            dcost_dR - cost gradient with respect to edge conductances
+            """
+            R_vec = self.R_in_t[-1]
+            base_cost = self.calc_GD_cost(Strctr, p_desired, R_vec_for_GD=R_vec, mod='for_grad_desc', func=func)
+            GD_dcost_vec = np.zeros([np.size(R_vec)])
+            for m in range(np.size(R_vec)):
+                dR_vec = np.zeros([np.size(R_vec)])
+                dR_vec[m] = dR_step
+                GD_dcost_vec[m] = self.calc_GD_cost(Strctr, p_desired, R_vec_for_GD=R_vec+dR_vec,
+                                                    mod='for_grad_desc', func=func)
+            dcost_dR = (GD_dcost_vec - base_cost) / dR_step
+            delta_R = -dcost_dR
+            return delta_R, dcost_dR
+
     def calc_GD_cost(self, Strctr: "Network_Structure", p_desired: NDArray[np.float_],
-                     K_vec_for_GD: Optional[NDArray[np.float_]] = None,
+                     K_vec_for_GD: Optional[NDArray[np.float_]] = None, R_vec_for_GD: Optional[NDArray[np.float_]] = None, 
                      mod: str = 'measure', func: str = 'MSE') -> float:
         """
         MSE or mean abs cost between desired and measured network output
@@ -575,12 +617,18 @@ class Network_State:
                                        f    -      constraint vector (Rocks and Katifori 2018) 1D np.arrays sized NEdges
                                                    such that EI[i] is node connected to EJ[i] at certain edge
         K_vec     - 1D np.array [NE] of conductivities (inverse of resistances)
+        R_vec     - 1D n.array [NE] of resistances
         p_desired - 1D np.array [Nout] of desired outputs given the inputs
 
         outputs:
         cost: np.float, MSE  or mean abs between maesured and desired outputs
         """
-        K_vec = self.K_vec if K_vec_for_GD is None else K_vec_for_GD
+        if K_vec_for_GD is not None:
+            K_vec = K_vec_for_GD
+        elif R_vec_for_GD is not None:
+            K_vec = 1 / R_vec_for_GD
+        else:
+            K_vec = self.K_vec
         p, u = solve.solve_flow(Strctr, self.CstrTuple, K_vec)
         p_out: NDArray[np.float_] = p[Strctr.output_nodes_arr][:, 0]  # p at output nodes, indexed as 1D array
 
@@ -593,7 +641,7 @@ class Network_State:
             cost = float(np.mean(np.abs(p_out - p_desired)))
         else:
             raise ValueError(f"Unknown gradient-descent cost function: {func}")
-        if mod == 'measure':  # save in State class only if not part of dK_grad_desc
+        if mod == 'measure':  # save in State class only if not part of dK_grad_desc or dR_grad_des
             self.GD_cost: float = cost
         return cost
 
@@ -644,8 +692,8 @@ class Network_State:
         """Evolve NTC temperatures for ``Variabs.dt`` while keeping the network boundary conditions constant.
 
         Supply exactly one of ``delta_p`` or ``Q`` for the first Euler step. After every resistance increment, the
-        flow is solved again with the same boundary conditions so that subsequent Joule heating uses the electrically
-        equilibrated edge drive.
+        flow is normally solved again with the same boundary conditions. Exact-gradient NTC training instead
+        recalculates its independently prescribed edge currents from the evolving resistance and temperature.
         """
         if (delta_p is None) == (Q is None):
             raise ValueError("Supply exactly one of delta_p or Q")
@@ -657,9 +705,14 @@ class Network_State:
         numerical_T_max = BigClass.Variabs.T_room / np.sqrt(np.finfo(float).eps)
         T_min = min(np.min(T_initial), BigClass.Variabs.T_room)
         frozen_ground = BigClass.Strctr.frozen_ground and BigClass.Strctr.ground_edges.size
+        independent_grad_desc_Q = (BigClass.Sprvsr.training_scheme == 'grad_desc' and
+                                   BigClass.Variabs.R_update == 'deltaR_NTC' and Q_const is not None)
 
         for _ in range(euler_steps):
             R = self.R_from_T(BigClass, T)
+            if independent_grad_desc_Q:
+                Q_const = BigClass.Sprvsr.calc_grad_desc_NTC_Q(BigClass, R, T)
+                BigClass.Sprvsr.desired_update_Q = Q_const.copy()
             if delta_p_const is not None:  # pressure-controlled Joule heating
                 dTdt = (delta_p_const**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
             else:  # current-controlled Joule heating
@@ -668,6 +721,8 @@ class Network_State:
             if frozen_ground:
                 T[BigClass.Strctr.ground_edges] = T_initial[BigClass.Strctr.ground_edges]
             self.R_in_t[-1] = self.R_from_T(BigClass, T)
+            if independent_grad_desc_Q:
+                continue
             self.solve_flow_given_modality(BigClass, "same_BCs")
             if delta_p_const is not None:
                 delta_p_const = self.u * self.R_in_t[-1]

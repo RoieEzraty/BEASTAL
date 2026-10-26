@@ -78,7 +78,10 @@ class VariablesConfig:
     maximal_current: float = 1e-3  # [A]
 
     # For numerically calculating GD
+    # grad_desc_use: str = 'K'  # caluclate GD through conductances K
+    grad_desc_use: str = 'R'  # caluclate GD through resistances R
     dK_step: float = 1e-8
+    dR_step: float = 1e-4
 
 # -----------------------------
 # Networkx python instance
@@ -102,13 +105,14 @@ class SupervisorConfig:
     control: str = "current"  # "pressure" or "current" controlled
     # control: str = "pressure"  # "pressure" or "current" controlled
     task_type: str = "Regression"
-    # dataset_type: str = "alternating ones"
-    dataset_type: str = "random uniform"
+    dataset_type: str = "alternating ones"
+    # dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
             training_scheme: str = "BEASTAL_NTC"
         elif control == "current":
-            training_scheme: str = "BEASTAL_NTC"
+            # training_scheme: str = "BEASTAL_NTC"
+            training_scheme: str = "grad_desc"
             # training_scheme: str = "PIECETAL_NTC"
     elif R_UPDATE == "grad_desc":
         training_scheme: str = "grad_desc"
@@ -117,7 +121,7 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
-    batch_size: int = 30
+    batch_size: int = 3
     iterations: int = 1800
 
     cap_Q: bool = True

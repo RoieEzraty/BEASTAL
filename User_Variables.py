@@ -49,7 +49,9 @@ class User_Variables:
         else:
             self.hysteresis = False
 
+        self.grad_desc_use: str = Variabs.grad_desc_use
         self.dK_step: float = Variabs.dK_step
+        self.dR_step: float = Variabs.dR_step
 
         self.p_thresh: float = 0.1
         self.bc_noise: float = 0.0
