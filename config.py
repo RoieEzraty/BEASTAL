@@ -12,10 +12,10 @@ from numpy.typing import NDArray
 # Relevant to all
 # -----------------------------
 
-# R_UPDATE = "deltaR_NTC"
+R_UPDATE = "deltaR_NTC"
 # R_UPDATE = "deltaR_propto_dp_nonlin"
 # R_UPDATE = "deltaR_propto_dp"
-R_UPDATE = "grad_desc"
+# R_UPDATE = "grad_desc"
 
 # -----------------------------
 # Networ Structure
@@ -78,8 +78,8 @@ class VariablesConfig:
     maximal_current: float = 1e-3  # [A]
 
     # For numerically calculating GD
-    # grad_desc_use: str = 'K'  # caluclate GD through conductances K
-    grad_desc_use: str = 'R'  # caluclate GD through resistances R
+    grad_desc_use: str = 'K'  # caluclate GD through conductances K
+    # grad_desc_use: str = 'R'  # caluclate GD through resistances R
     dK_step: float = 1e-8
     dR_step: float = 1e-4
 
@@ -132,12 +132,17 @@ class SupervisorConfig:
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
-            alpha = 0.02 # deltaR_NTC
+            if training_scheme == 'grad_desc':
+                # alpha = 0.1 * 1000.0**2
+                alpha = 0.05 / 1000
+            else:
+                alpha = 0.02 # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         initial_T = 1.00 * VariablesConfig.T_room + 0
     elif R_UPDATE == "grad_desc":
-        alpha = 4.
+        # alpha = 2.25
+        alpha = 4
     elif training_scheme == "BEASTAL":
         if control == "current":
             alpha: float = 15.0  # deltaR_propto_deltap

@@ -374,8 +374,14 @@ class Supervisor:
 
     def calc_grad_desc_NTC_Q(self, BigClass: "Big_Class", R: NDArray[np.float_], T: NDArray[np.float_]) -> NDArray[np.float_]:
         """Return independently prescribed edge currents that implement the stored resistance-gradient step."""
-        Q_sqrd_times_R = self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / (R*BigClass.Variabs.B) * self.grad_loss_R + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
-        return np.sqrt(np.maximum(Q_sqrd_times_R / R, 0.0))
+        if BigClass.Variabs.grad_desc_use == "K":
+            K = 1/R
+            Q_sqrd = -self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / BigClass.Variabs.B * self.grad_loss_K + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room) * K
+            return np.sqrt(np.maximum(Q_sqrd, 0.0))
+        elif BigClass.Variabs.grad_desc_use == "R":
+            Q_sqrd_times_R = self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / (R*BigClass.Variabs.B) * self.grad_loss_R + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
+            return np.sqrt(np.maximum(Q_sqrd_times_R / R, 0.0))
+        
 
     def update_input(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next input boundary value in update modality."""
@@ -685,8 +691,8 @@ class Supervisor:
                     update_vec = np.matmul(Strctr.CM_dagger, Up)
         elif self.training_scheme == 'grad_desc':
             if BigClass.Variabs.grad_desc_use == 'K':
-                grad_loss_k = self.grad_loss_over_batch
-                self.grad_loss_R = (-1/BigClass.State.R_in_t[-1]**2) * grad_loss_k
+                self.grad_loss_K = self.grad_loss_over_batch
+                # self.grad_loss_R = (-1/BigClass.State.R_in_t[-1]**2) * grad_loss_k
             else:
                 self.grad_loss_R = self.grad_loss_over_batch
             R = BigClass.State.R_in_t[-1]
