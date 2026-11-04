@@ -141,7 +141,10 @@ class SupervisorConfig:
                     alpha = 2.0 / 1000
             else:
                 # alpha = 0.02 # deltaR_NTC
-                alpha = 1.0 / 1000
+                if GRAD_DESC_USE == "R":
+                    alpha = 1.0 * 1000.0**2
+                else:  # GRAD_DESC_USE == "K"
+                    alpha = 2.0 / 1000
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         # initial_T = 1.00 * VariablesConfig.T_room + 0

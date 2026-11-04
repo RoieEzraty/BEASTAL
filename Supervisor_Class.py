@@ -624,7 +624,7 @@ class Supervisor:
                 selected_nodes = np.array([chosen_input, chosen_output], dtype=int)
                 local_current_map = Strctr.CM[np.ix_(selected_edges, selected_nodes)]  # (3, 2): chosen in/out currents to 3 edge currents
                 local_current_map_dagger = np.linalg.pinv(local_current_map)  # (2, 3): desired edge currents to chosen in/out currents
-                local_current_projection = local_current_map @ local_current_map_dagger  # (3, 3): project 3 requested edge currents onto realizable 2D subspace
+                local_current_projection = local_current_map @ local_current_map_dagger  # (3, 3): project 3 requested edge currents onto realizable 2D
                 selected_gradient = local_current_projection @ grad_loss_over_batch[selected_edges]
                 selected_norm = np.linalg.norm(selected_gradient)
                 selected_gradient_for_update = selected_gradient / selected_norm if self.normalize_loss and selected_norm > 0 \
@@ -674,9 +674,11 @@ class Supervisor:
 
                 # CHEATING, you don't know R
                 if BigClass.Variabs.grad_desc_use == "R":
+                    self.grad_loss_R = grad_loss_over_batch.copy()
                     dRdT = State.dRdT_from_R(BigClass, R, T)
                     Up_sqrd = BigClass.Variabs.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dRdT) / R + self.beta
                 else:  # grad_desc_use == "K"
+                    self.grad_loss_K = grad_loss_over_batch.copy()
                     dKdT = State.dKdT_from_R(BigClass, R, T)
                     Up_sqrd = BigClass.Variabs.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dKdT) / R + self.beta
                 # # WHAT IT ACTUALY SHOULD BE
@@ -785,7 +787,7 @@ class Supervisor:
                                                                parameter=BigClass.Variabs.grad_desc_use)
             # # WHAT IT SHOULD ACTUALLY BE
             # grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
-            #                                                    loss_for_gradient, parameter="resistance")
+            #                                                    loss_for_gradient, parameter=BigClass.Variabs.grad_desc_use)
         if Strctr.frozen_ground:
             grad_loss_vec[Strctr.ground_edges] = 0
         self.grad_loss_vec = grad_loss_vec

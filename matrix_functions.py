@@ -637,17 +637,10 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
         pass
     node_pressures = np.asarray(p, dtype=float).reshape(-1)[:DM.shape[1]]
     output_nodes = np.asarray(output_nodes_arr, dtype=int).reshape(-1)
+    Nout = output_nodes.size
     ground_nodes = np.asarray(ground_nodes_arr, dtype=int).reshape(-1)
     loss_array = np.asarray(loss, dtype=float)
     output_loss = (loss_array[0] if loss_array.ndim > 1 else loss_array).reshape(-1)
-    if DM.shape[0] != NE:
-        raise ValueError(f"Expected {NE} edges, got DM.shape[0]={DM.shape[0]}")
-    if node_pressures.size != DM.shape[1]:
-        raise ValueError(f"Expected {DM.shape[1]} node pressures, got {node_pressures.size}")
-    if output_loss.size != output_nodes.size:
-        raise ValueError(f"Expected {output_nodes.size} output losses, got {output_loss.size}")
-    if ground_nodes.size == 0:
-        raise ValueError("Current-controlled gradients require at least one grounded node")
 
     free_nodes = np.ones(DM.shape[1], dtype=bool)
     free_nodes[ground_nodes] = False
@@ -657,7 +650,7 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
     partial_loss[output_nodes] = output_loss
     # Mathematically equivalent to np.linalg.inv(laplacian) @ partial_loss[free_nodes].
     adjoint = np.linalg.solve(laplacian, partial_loss[free_nodes])
-    grad_conductance = (DM_free @ adjoint) * (DM @ node_pressures)
+    grad_conductance = 2 * (DM_free @ adjoint) * (DM @ node_pressures) / Nout
     if parameter == "K":
         return grad_conductance
     if parameter == "R":

@@ -477,7 +477,7 @@ class Network_State:
                 # CHEATING - you can't use desired current
                 print('CAUTION! update R is cheating!')
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q, 
-                                                    euler_steps=BigClass.Variabs.euler_steps)
+                                                    euler_steps=BigClass.Variabs.euler_steps, no_pinv=True)
                 # # WHAT IT ACTUALLY SHOULD BE
                 # T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
                 #                                     euler_steps=BigClass.Variabs.euler_steps)
@@ -690,12 +690,14 @@ class Network_State:
     #------------------------------
     def evolve_NTC_temperature(self, BigClass: "Big_Class", T_initial: NDArray[np.float_],
                                delta_p: Optional[NDArray[np.float_]] = None, Q: Optional[NDArray[np.float_]] = None,
-                               euler_steps: int = 16) -> NDArray[np.float_]:
+                               no_pinv: bool = False, euler_steps: int = 16) -> NDArray[np.float_]:
         """Evolve NTC temperatures for ``Variabs.dt`` while keeping the network boundary conditions constant.
 
         Supply exactly one of ``delta_p`` or ``Q`` for the first Euler step. After every resistance increment, the
         flow is normally solved again with the same boundary conditions. Exact-gradient NTC training instead
         recalculates its independently prescribed edge currents from the evolving resistance and temperature.
+
+        no_pinv is when you can actually impose Q on all edges, no only through nodes. 
         """
         if (delta_p is None) == (Q is None):
             raise ValueError("Supply exactly one of delta_p or Q")
@@ -707,8 +709,7 @@ class Network_State:
         numerical_T_max = BigClass.Variabs.T_room / np.sqrt(np.finfo(float).eps)
         T_min = min(np.min(T_initial), BigClass.Variabs.T_room)
         frozen_ground = BigClass.Strctr.frozen_ground and BigClass.Strctr.ground_edges.size
-        independent_grad_desc_Q = (BigClass.Sprvsr.training_scheme == 'grad_desc' and
-                                   BigClass.Variabs.R_update == 'deltaR_NTC' and Q_const is not None)
+        independent_grad_desc_Q = (Q_const is not None and (BigClass.Sprvsr.training_scheme == "grad_desc" or no_pinv))
 
         for _ in range(euler_steps):
             R = self.R_from_T(BigClass, T)
