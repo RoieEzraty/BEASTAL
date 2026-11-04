@@ -145,9 +145,9 @@ class Supervisor:
         if config.Sprvsr.normalize_M:
             M_values = functions.normalize_M(M_values, config.Sprvsr.normalize, Strctr.Nin, Strctr.Nout)
 
-        if Variabs.R_update == "deltaR_NTC" and self.control == "current":  # normalize relative to resistances
+        if Variabs.R_update in {"deltaR_NTC", "grad_desc"} and self.control == "current":  # keep direct GD and NTC on the same task
             mean_R_25 = float(np.mean(Variabs.R_25))
-            print(f'multiplied M by {mean_R_25} due to NTC current controlled')
+            print(f'multiplied M by {mean_R_25} for the NTC-matched current-controlled task')
             M_values = M_values * mean_R_25 / (Strctr.Nout * Strctr.Nin + 1)
             # M_values = M_values * Variabs.R_25
         if np.size(M_values) != required_size:
@@ -169,7 +169,7 @@ class Supervisor:
             else:
                 self.dataset = np.random.uniform(0.0, 2.0, size=(self.iterations*self.batch_size, Strctr.Nin))
 
-            if Variabs.R_update == 'deltaR_NTC' and self.control == 'current':
+            if Variabs.R_update in {'deltaR_NTC', 'grad_desc'} and self.control == 'current':
                 self.dataset = self.dataset/ np.max(self.dataset) * Variabs.maximal_current
 
             self.targets = self.dataset @ self.M.T
@@ -659,24 +659,31 @@ class Supervisor:
                     self.beta = previous_drop**2  # forestall inertia by Codex Sep11
                 elif self.control == 'current':
                     # CHEATING Sep20
-                    # R = State.R_in_t[-1]
-                    # T = State.T_in_t[-1]
-                    # temperature_excess = np.maximum(T - BigClass.Variabs.T_room, 0.0)
-                    # self.beta = BigClass.Variabs.G_T * temperature_excess / R
-                    # WHAT IT ACTUALLY SHOULD BE 
-                    previous_current = np.matmul(Strctr.CM, self.update_vec)  # forestall inertia by Codex Sep11
-                    self.beta =  previous_current**2  # forestall inertia by Codex Sep11
+                    print("CHEATING - you don't know T's for offset")
+                    R = State.R_in_t[-1]
+                    T = State.T_in_t[-1]
+                    temperature_excess = np.maximum(T - BigClass.Variabs.T_room, 0.0)
+                    self.beta = BigClass.Variabs.G_T * temperature_excess / R
+                    # # WHAT IT ACTUALLY SHOULD BE 
+                    # previous_current = np.matmul(Strctr.CM, self.update_vec)  # forestall inertia by Codex Sep11
+                    # self.beta =  previous_current**2  # forestall inertia by Codex Sep11
                 
                 # # zero beta if loss changes sign to let thermal equilibrium dictate resistances
                 # if len(self.loss_in_t)>1:
                 #     self.beta[self.loss_in_t[-2] * self.loss_in_t[-1] < 0] = 0
-                Up_sqrd = self.alpha * (grad_loss_over_batch_norm if self.normalize_loss else grad_loss_over_batch) + self.beta
+
                 # CHEATING, you don't know R
-                # dRdT = State.dRdT_from_R(BigClass, R, T)
-                # Up_sqrd = -BigClass.Variabs.C_T * self.alpha * grad_loss_over_batch / (BigClass.Variabs.dt * dRdT) / R + self.beta
+                if BigClass.Variabs.grad_desc_use == "R":
+                    dRdT = State.dRdT_from_R(BigClass, R, T)
+                    Up_sqrd = BigClass.Variabs.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dRdT) / R + self.beta
+                else:  # grad_desc_use == "K"
+                    dKdT = State.dKdT_from_R(BigClass, R, T)
+                    Up_sqrd = BigClass.Variabs.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dKdT) / R + self.beta
+                # # WHAT IT ACTUALY SHOULD BE
+                # Up_sqrd = self.alpha * (grad_loss_over_batch_norm if self.normalize_loss else grad_loss_over_batch) + self.beta
 
                 Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep22
-        
+
                 self.desired_update_Q = Up
                 if self.control == "pressure":
                     update_vec = np.matmul(Strctr.DM_dagger, Up)
@@ -751,7 +758,7 @@ class Supervisor:
             desired = np.asarray(self.desired_in_t[sample_index], dtype=float)
             if BigClass.Variabs.grad_desc_use == 'K':
                 _, grad_loss_vec = State.dK_grad_desc(Strctr, BigClass.Variabs.dK_step, desired, func='MSE')
-            elif BigClass.Variabs.grad_desc_use == 'R':
+            else:  # grad_desc_use == 'R'
                 _, grad_loss_vec = State.dR_grad_desc(Strctr, BigClass.Variabs.dR_step, desired, func='MSE')
         elif self.control == "pressure":
             Strctr = BigClass.Strctr_fict if BigClass.Strctr.Ninter > 0 else BigClass.Strctr
@@ -759,23 +766,26 @@ class Supervisor:
             grad_loss_vec = matrix_functions.grad_loss_FC(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr, self.loss)
 
         else:  # current controlled
-            Strctr = BigClass.Strctr
-            # Strctr.build_current_injection(State.R_in_t[-1])  # CHEATING, you don't really know conductances
-            Strctr.build_current_injection()  # BEASTAL
+            Strctr = BigClass.Strctr  # BEASTAL
+            # # CHEATING - you don't really know conductances
+            print("CHEATING - you don't really know conductances")
+            Strctr.build_current_injection(State.R_in_t[-1])  # CHEATING, you don't really know conductances
+            # Strctr.build_current_injection()  # BEASTAL
             p = State.p[:Strctr.NN]
             loss_for_gradient = np.asarray(self.loss, dtype=float).copy()
             if self.training_scheme == 'PIECETAL_NTC':
                 pair_index = sample_index
                 chosen_output_index = pair_index % Strctr.Nout
                 loss_for_gradient[..., np.arange(Strctr.Nout) != chosen_output_index] = 0.0
-            # # CHEATING
-            # print('CAUTION grad loss is cheating by using R')
-            # grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes,
-            #                                                    Strctr.ground_nodes_arr, loss_for_gradient,
-            #                                                    conductances = 1/BigClass.State.R_in_t[-1],
-            #                                                    parameter="resistance")
-            grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
-                                                               loss_for_gradient, parameter="resistance")
+            # CHEATING
+            print('CAUTION grad loss is cheating by using R')
+            grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes,
+                                                               Strctr.ground_nodes_arr, loss_for_gradient,
+                                                               conductances = 1/BigClass.State.R_in_t[-1],
+                                                               parameter=BigClass.Variabs.grad_desc_use)
+            # # WHAT IT SHOULD ACTUALLY BE
+            # grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
+            #                                                    loss_for_gradient, parameter="resistance")
         if Strctr.frozen_ground:
             grad_loss_vec[Strctr.ground_edges] = 0
         self.grad_loss_vec = grad_loss_vec

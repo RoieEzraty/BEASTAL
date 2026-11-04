@@ -30,14 +30,14 @@ if TYPE_CHECKING:
 def export_importants_csv(BigClass: "Big_Class", file_path: str | PathLike[str]) -> None:
     """Export the principal network histories to one CSV row per update time.
 
-    The array-valued columns are JSON arrays, so each input, measured output,
-    measured node-value slice, per-output loss, combined input/output update
-    vector, and resistance vector occupies a single CSV cell. MSE is the
-    normalized scalar loss stored by the supervisor. The initial update values and
-    resistances are omitted; each row therefore contains the values resulting
-    from that row's update. With batch training, resistance rows within a batch
-    remain constant and the batch-boundary row contains the change produced by
-    the averaged update-modality values.
+    The array-valued columns are JSON arrays. Input, measured output, measured
+    node values, and per-output loss have shape ``(Nvalues, batch_size)`` in
+    each row, with one column per measurement in the batch. Combined
+    input/output update values, the loss gradient averaged over the batch, and
+    resistances are one-dimensional. MSE is the normalized scalar loss averaged
+    over the batch. The initial update values and resistances are omitted; each
+    row therefore contains the values resulting from that batch's averaged
+    update.
 
     Parameters
     ----------
@@ -49,35 +49,43 @@ def export_importants_csv(BigClass: "Big_Class", file_path: str | PathLike[str])
     State = BigClass.State
     Sprvsr = BigClass.Sprvsr
     n_updates = int(State.t)
+    batch_size = int(Sprvsr.batch_size)
     histories = {"input": Sprvsr.input_drawn_in_t, "measured_output": State.output_in_t, "node_values": State.p_in_t,
                   "input_update": Sprvsr.input_update_in_t[1:], "output_update": Sprvsr.output_update_in_t[1:],
-                  "loss": Sprvsr.loss_in_t, "MSE": Sprvsr.loss_scalar_in_t, "Rs": State.R_in_t[1:]}
+                  "loss": Sprvsr.loss_in_t, "MSE": Sprvsr.loss_scalar_in_t_over_batch,
+                  "grad_loss": Sprvsr.grad_loss_vec_in_t, "Rs": State.R_in_t[1:]}
 
-    for name, history in histories.items():
+    measurement_names = ("input", "measured_output", "node_values", "loss", "grad_loss")
+    for name in measurement_names:
+        history = histories[name]
+        required_length = n_updates * batch_size
+        if len(history) < required_length:
+            raise ValueError(f"Cannot export {n_updates} batches of size {batch_size}: {name} contains only "
+                             f"{len(history)} entries.")
+    for name in ("input_update", "output_update", "MSE", "Rs"):
+        history = histories[name]
         if len(history) < n_updates:
             raise ValueError(f"Cannot export {n_updates} updates: {name} contains only " f"{len(history)} entries.")
-
-    # If multiple measurements precede each update, select the last one: it is
-    # the measurement that drives the corresponding update.
-    n_measurements = min(len(histories["input"]), len(histories["measured_output"]))
-    measurement_indices = [((t * n_measurements + n_updates - 1) // n_updates) - 1 for t in range(1, n_updates + 1)] \
-                          if n_updates else []
 
     destination = Path(file_path)
     with destination.open("w", newline="", encoding="utf-8") as csv_file:
         writer = csv.writer(csv_file)
-        writer.writerow(["t", "input", "measured_output", "node_values", "loss", "MSE", "update_values", "Rs"])
-        for t, measurement_idx in enumerate(measurement_indices, start=1):
-            loss = np.asarray(histories["loss"][t - 1])
-            # Loss functions store samples along the first axis. The current
-            # sample is first and has the same shape as the measured output.
-            if loss.ndim > 1:
-                loss = loss[0]
-            loss = loss.ravel()
+        writer.writerow(["t", "input", "measured_output", "node_values", "loss", "MSE", "update_values",
+                         "grad_loss_over_batch", "Rs"])
+        for t in range(1, n_updates + 1):
+            batch_start = (t - 1) * batch_size
+            batch_end = t * batch_size
+            inputs = np.stack([np.asarray(value).ravel() for value in histories["input"][batch_start:batch_end]], axis=1)
+            measured_outputs = np.stack([np.asarray(value).ravel() for value in histories["measured_output"][batch_start:batch_end]], axis=1)
+            node_values = np.stack([np.asarray(value).ravel() for value in histories["node_values"][batch_start:batch_end]], axis=1)
+            # Loss functions place the current sample first; it has one value
+            # per measured output. Retain every current-sample loss in the batch.
+            losses = np.stack([(value[0] if value.ndim > 1 else value).ravel()
+                               for value in map(np.asarray, histories["loss"][batch_start:batch_end])], axis=1)
+            grad_loss_over_batch = np.mean(np.asarray(histories["grad_loss"][batch_start:batch_end]), axis=0).ravel()
             update_values = np.concatenate((np.asarray(histories["input_update"][t - 1]).ravel(),
                                             np.asarray(histories["output_update"][t - 1]).ravel()))
-            writer.writerow([t, json.dumps(np.asarray(histories["input"][measurement_idx]).tolist()),
-                             json.dumps(np.asarray(histories["measured_output"][measurement_idx]).tolist()),
-                             json.dumps(np.asarray(histories["node_values"][measurement_idx]).tolist()),
-                             json.dumps(loss.tolist()), histories["MSE"][t - 1], json.dumps(update_values.tolist()),
+            writer.writerow([t, json.dumps(inputs.tolist()), json.dumps(measured_outputs.tolist()),
+                             json.dumps(node_values.tolist()), json.dumps(losses.tolist()), histories["MSE"][t - 1],
+                             json.dumps(update_values.tolist()), json.dumps(grad_loss_over_batch.tolist()),
                              json.dumps(np.asarray(histories["Rs"][t - 1]).tolist())])

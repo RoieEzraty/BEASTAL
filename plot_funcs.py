@@ -121,7 +121,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     ax3.plot(BigClass.State.R_in_t[1:])
     if log_R:
         ax3.set_yscale('log')
-        if BigClass.Variabs.R_update == "deltaR_NTC":  # especially large axes for NTC resistors
+        if BigClass.Variabs.R_update in {"deltaR_NTC", "grad_desc"}:  # especially large axes for NTC resistors
             ax3.set_ylim(1e0, 2e3)
         else:
             ax3.set_ylim(1e-4, 1e2)

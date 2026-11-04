@@ -477,17 +477,6 @@ def inverse_incidence(DM: NDArray[np.int_]) -> NDArray[np.float_]:
     return np.linalg.pinv(DM)
 
 
-def build_rep_sel(Nin: int, Nout: int, DM: NDArray[np.int_]) -> NDArray[np.int_]:
-    """
-    Build repetition-selection matrix for dp^!=RM*(y_hat-y)/(DM*x)
-    """
-    # Build R: ???
-    RM = np.zeros(np.shape(DM), dtype=int)
-    for j in range(np.shape(DM)[0]):
-        RM[j, DM[j, :] == -1] = 1
-    return RM
-
-
 def buildL(DM: NDArray[np.int_], K_mat: NDArray[np.float_], Cstr: NDArray[np.float_],
            NN: int) -> Tuple[NDArray[np.float_], NDArray[np.float_]]:
     """
@@ -631,7 +620,7 @@ def grad_loss_FC(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_no
 
 
 def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_nodes_arr: NDArray[np.int_],
-                      ground_nodes_arr: NDArray[np.int_], loss: NDArray[np.float_], parameter: str = "resistance",
+                      ground_nodes_arr: NDArray[np.int_], loss: NDArray[np.float_], parameter: str = "R",
                       conductances: Optional[NDArray[np.float_]] = None) -> NDArray[np.float_]:
     """Compute the edge-parameter loss gradient for a current-controlled linear network.
 
@@ -669,9 +658,9 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
     # Mathematically equivalent to np.linalg.inv(laplacian) @ partial_loss[free_nodes].
     adjoint = np.linalg.solve(laplacian, partial_loss[free_nodes])
     grad_conductance = (DM_free @ adjoint) * (DM @ node_pressures)
-    if parameter == "conductance":
+    if parameter == "K":
         return grad_conductance
-    if parameter == "resistance":
+    if parameter == "R":
         return -(conductances**2) * grad_conductance
     raise ValueError(f"Unknown gradient parameter: {parameter}")
 

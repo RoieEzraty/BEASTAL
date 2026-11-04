@@ -31,7 +31,7 @@ class User_Variables:
 
         if self.R_update in {"deltaR_propto_dp_decay", "deltaR_propto_dp_nonlin_decay"}:
             self.decay: float = Variabs.decay_R
-        elif self.R_update == "deltaR_NTC":
+        elif self.R_update in {"deltaR_NTC", "grad_desc"}:
             self.C_T: float = Variabs.C_T
             self.G_T: float = Variabs.G_T
             self.R_25: NDArray[np.float_] = np.random.normal(Variabs.R_25, Variabs.noise_to_R_25, Strctr.NE)

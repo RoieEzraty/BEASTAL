@@ -426,10 +426,11 @@ class Network_State:
             update_cond = np.ones(BigClass.Strctr.NE, dtype=bool)
 
         if BigClass.Variabs.R_update in {'deltaR_propto_dp', 'deltaR_propto_dp_decay'}:  # delta_R propto p_in-p_out
-            delta_R = BigClass.Variabs.gamma*delta_p * update_cond
-            # CHEATING - you can't satisfy all edges
+            # # CHEATING - you can't satisfy all edges
             # print('CAUTION! update R is cheating!')
             # delta_R = BigClass.Variabs.gamma*BigClass.Sprvsr.desired_update_Q * update_cond
+            # # WHAT IT ACTUALLY SHOULD BE
+            delta_R = BigClass.Variabs.gamma*delta_p * update_cond
             if BigClass.Variabs.normalize_step:
                 delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
                 R_nxt: NDArray[np.float_] = self.R_in_t[-1] + delta_R_norm
@@ -477,6 +478,7 @@ class Network_State:
                 print('CAUTION! update R is cheating!')
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
+                # # WHAT IT ACTUALLY SHOULD BE
                 # T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
                 #                                     euler_steps=BigClass.Variabs.euler_steps)
             # # LEGACY FIXED-EDGE-DRIVE MODE: comment out the working-state append above and the re-solve block in
@@ -767,3 +769,18 @@ class Network_State:
         dRdT: Rate of change of resistance with respect to temperature
         """
         return -BigClass.Variabs.B / T**2 * R
+
+    def dKdT_from_R(self, BigClass: "Big_Class", R: Union[float, NDArray[np.float_]],
+                    T: Union[float, NDArray[np.float_]],) -> NDArray[np.float_]:
+            """
+            Calculate the NTC resistance derivative with respect to temperature.
+    
+            inputs:
+            R: Resistance value (or array of values)
+            T: Temperature in Kelvin corresponding to the given resistance
+    
+            outputs:
+            dRdT: Rate of change of resistance with respect to temperature
+            """
+            K = 1/R
+            return BigClass.Variabs.B / T**2 * K

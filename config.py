@@ -17,6 +17,9 @@ R_UPDATE = "deltaR_NTC"
 # R_UPDATE = "deltaR_propto_dp"
 # R_UPDATE = "grad_desc"
 
+GRAD_DESC_USE: str = 'K'  # caluclate GD through conductances K
+# GRAD_DESC_USE: str = 'R'  # caluclate GD through resistances R
+
 # -----------------------------
 # Networ Structure
 # -----------------------------
@@ -70,16 +73,15 @@ class VariablesConfig:
     # noise_to_B: float = 20.0  # [K]
     noise_to_B: float = 0.0  # [K]
     noise_to_R_25: float = 0.0  # [Ohm]
-    dt_upper: float = 0.06  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.01  # [s] waiting time at the end of training
+    dt_upper: float = 0.2  # [s] waiting time at the beginning of training
+    dt_lower: float = 0.02  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
     euler_steps: int = 40  # steps during euler ODE solver.
     maximal_current: float = 1e-3  # [A]
 
     # For numerically calculating GD
-    grad_desc_use: str = 'K'  # caluclate GD through conductances K
-    # grad_desc_use: str = 'R'  # caluclate GD through resistances R
+    grad_desc_use: str = GRAD_DESC_USE
     dK_step: float = 1e-8
     dR_step: float = 1e-4
 
@@ -111,8 +113,8 @@ class SupervisorConfig:
         if control == "pressure":
             training_scheme: str = "BEASTAL_NTC"
         elif control == "current":
-            # training_scheme: str = "BEASTAL_NTC"
-            training_scheme: str = "grad_desc"
+            training_scheme: str = "BEASTAL_NTC"
+            # training_scheme: str = "grad_desc"
             # training_scheme: str = "PIECETAL_NTC"
     elif R_UPDATE == "grad_desc":
         training_scheme: str = "grad_desc"
@@ -122,27 +124,28 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 3
-    iterations: int = 1800
+    iterations: int = 4800
 
     cap_Q: bool = True
     T_max: float = 415.0
     
-    if R_UPDATE in ["deltaR_NTC"]:
+    if R_UPDATE in ["deltaR_NTC", "grad_desc"]:
         if control == "pressure":
             alpha = 8.0  # deltaR_NTC
             # alpha = 0.5  # deltaR_NTC
         else:
             if training_scheme == 'grad_desc':
-                # alpha = 0.1 * 1000.0**2
-                alpha = 0.05 / 1000
+                if GRAD_DESC_USE == "R":
+                    alpha = 1.0 * 1000.0**2
+                else:  # GRAD_DESC_USE == "K"
+                    alpha = 2.0 / 1000
             else:
-                alpha = 0.02 # deltaR_NTC
+                # alpha = 0.02 # deltaR_NTC
+                alpha = 1.0 / 1000
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
-        initial_T = 1.00 * VariablesConfig.T_room + 0
-    elif R_UPDATE == "grad_desc":
-        # alpha = 2.25
-        alpha = 4
+        # initial_T = 1.00 * VariablesConfig.T_room + 0
+        initial_T = 1.15 * VariablesConfig.T_room + 0
     elif training_scheme == "BEASTAL":
         if control == "current":
             alpha: float = 15.0  # deltaR_propto_deltap
