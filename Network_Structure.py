@@ -114,7 +114,7 @@ class Network_Structure:
         """
         if R_vec is None:  # BEASTAL
             conductances = np.ones(self.NE, dtype=float)
-        else:  # CHEATING
+        else:  # CHEATING for calculating gradient loss, you don't really know R/K
             resistances = np.asarray(R_vec, dtype=float).reshape(-1)
             if resistances.size != self.NE:
                 raise ValueError(f"R_vec has {resistances.size} entries; expected NE={self.NE}")

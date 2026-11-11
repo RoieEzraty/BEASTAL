@@ -107,8 +107,8 @@ class SupervisorConfig:
     control: str = "current"  # "pressure" or "current" controlled
     # control: str = "pressure"  # "pressure" or "current" controlled
     task_type: str = "Regression"
-    dataset_type: str = "alternating ones"
-    # dataset_type: str = "random uniform"
+    # dataset_type: str = "alternating ones"
+    dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
             training_scheme: str = "BEASTAL_NTC"
@@ -124,8 +124,14 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 3
-    iterations: int = 4800
+    iterations: int = 600  # training steps
 
+    # CHEATINGS
+    cheat_know_R_in_evolution: bool = False  # FALSE for BEASTAL, TRUE for grad_desc
+    cheat_know_R_in_grad_loss: bool = False  # FALSE for BEASTAL, TRUE for grad_desc
+    cheat_access_all_edges: bool = False  # FALSE for BEASTAL, TRUE for grad_desc
+
+    # NTC specific
     cap_Q: bool = True
     T_max: float = 415.0
     
@@ -145,6 +151,7 @@ class SupervisorConfig:
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
                     alpha = 2.0 / 1000
+                    # alpha = 0.02  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         # initial_T = 1.00 * VariablesConfig.T_room + 0

@@ -426,11 +426,11 @@ class Network_State:
             update_cond = np.ones(BigClass.Strctr.NE, dtype=bool)
 
         if BigClass.Variabs.R_update in {'deltaR_propto_dp', 'deltaR_propto_dp_decay'}:  # delta_R propto p_in-p_out
-            # # CHEATING - you can't satisfy all edges
-            # print('CAUTION! update R is cheating!')
-            # delta_R = BigClass.Variabs.gamma*BigClass.Sprvsr.desired_update_Q * update_cond
-            # # WHAT IT ACTUALLY SHOULD BE
-            delta_R = BigClass.Variabs.gamma*delta_p * update_cond
+            if BigClass.Sprvsr.cheat_access_all_edges:  # CHEATING - you can't access all edges
+                delta_R = BigClass.Variabs.gamma*BigClass.Sprvsr.desired_update_Q * update_cond
+            else:  # WHAT IT ACTUALLY SHOULD BE
+                delta_R = BigClass.Variabs.gamma*delta_p * update_cond
+
             if BigClass.Variabs.normalize_step:
                 delta_R_norm = BigClass.Sprvsr.alpha * delta_R / np.linalg.norm(delta_R)
                 R_nxt: NDArray[np.float_] = self.R_in_t[-1] + delta_R_norm
@@ -439,6 +439,7 @@ class Network_State:
                     R_nxt = self.R_in_t[-1] + delta_R - BigClass.Variabs.decay*(self.R_in_t[-1] - 1)
                 else:  # update regular
                     R_nxt = self.R_in_t[-1] + delta_R
+            # Append to R_in_t
             self.R_in_t.append(np.clip(R_nxt, 1e-12, None))
         elif BigClass.Variabs.R_update == 'R_propto_dp':  # R propto p_in-p_out
             self.R_in_t.append(BigClass.Variabs.gamma * np.abs(delta_p))
@@ -474,13 +475,12 @@ class Network_State:
                 T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], delta_p=delta_p, 
                                                     euler_steps=BigClass.Variabs.euler_steps)
             else:  # current
-                # CHEATING - you can't use desired current
-                print('CAUTION! update R is cheating!')
-                T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q, 
-                                                    euler_steps=BigClass.Variabs.euler_steps, no_pinv=True)
-                # # WHAT IT ACTUALLY SHOULD BE
-                # T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u, 
-                #                                     euler_steps=BigClass.Variabs.euler_steps)
+                if BigClass.Sprvsr.cheat_access_all_edges:  # CHEATING - you can't access all edges and apply desired current
+                    T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=BigClass.Sprvsr.desired_update_Q,
+                                                        euler_steps=BigClass.Variabs.euler_steps, no_pinv=True)
+                else: # WHAT IT ACTUALLY SHOULD BE
+                    T_nxt = self.evolve_NTC_temperature(BigClass, self.T_in_t[-1], Q=self.u,
+                                                        euler_steps=BigClass.Variabs.euler_steps)
             # # LEGACY FIXED-EDGE-DRIVE MODE: comment out the working-state append above and the re-solve block in
             # # evolve_NTC_temperature, then uncomment the next two lines.
             # R_nxt = self.R_from_T(BigClass, T_nxt)
@@ -697,7 +697,7 @@ class Network_State:
         flow is normally solved again with the same boundary conditions. Exact-gradient NTC training instead
         recalculates its independently prescribed edge currents from the evolving resistance and temperature.
 
-        no_pinv is when you can actually impose Q on all edges, no only through nodes. 
+        no_pinv is when you can actually impose Q on all edges, not only through nodes.
         """
         if (delta_p is None) == (Q is None):
             raise ValueError("Supply exactly one of delta_p or Q")
@@ -709,11 +709,13 @@ class Network_State:
         numerical_T_max = BigClass.Variabs.T_room / np.sqrt(np.finfo(float).eps)
         T_min = min(np.min(T_initial), BigClass.Variabs.T_room)
         frozen_ground = BigClass.Strctr.frozen_ground and BigClass.Strctr.ground_edges.size
-        independent_grad_desc_Q = (Q_const is not None and (BigClass.Sprvsr.training_scheme == "grad_desc" or no_pinv))
+        independent_Q = Q_const is not None and (BigClass.Sprvsr.training_scheme == "grad_desc" or no_pinv)
+        recompute_Q = Q_const is not None and (BigClass.Sprvsr.training_scheme == "grad_desc" or
+                                                (no_pinv and BigClass.Sprvsr.cheat_know_R_in_evolution))
 
         for _ in range(euler_steps):
             R = self.R_from_T(BigClass, T)
-            if independent_grad_desc_Q:
+            if recompute_Q:
                 Q_const = BigClass.Sprvsr.calc_grad_desc_NTC_Q(BigClass, R, T)
                 BigClass.Sprvsr.desired_update_Q = Q_const.copy()
             if delta_p_const is not None:  # pressure-controlled Joule heating
@@ -724,7 +726,7 @@ class Network_State:
             if frozen_ground:
                 T[BigClass.Strctr.ground_edges] = T_initial[BigClass.Strctr.ground_edges]
             self.R_in_t[-1] = self.R_from_T(BigClass, T)
-            if independent_grad_desc_Q:
+            if independent_Q:
                 continue
             self.solve_flow_given_modality(BigClass, "same_BCs")
             if delta_p_const is not None:
