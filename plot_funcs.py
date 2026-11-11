@@ -43,13 +43,14 @@ plt.rcParams['legend.loc'] = 'best'
 
 def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_network: Optional[bool] = False,
                     node_labels: bool = False, save: bool = False, name: Optional[str] = None,
-                    log_R: bool = False) -> None:
+                    log_R: bool = False, include_GD_comparison: bool = False) -> None:
     """
-    one plot with 4 subfigures of
+    one plot with up to 5 subfigures of
     1) mean absolute value of loss in time
     2) controlled inputs and outputs in the update modality, in time
     3) resistances in time
-    4) Network structure, from networkx pos_lattice
+    4) Network structure, from networkx pos_lattice (optional)
+    5) Cosine similarity between applied and GD resistance steps (optional, when calculated)
 
     inputs:
     BigClass        - Class instance containing User_Variables, Network_Structure, etc.
@@ -59,6 +60,7 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     save            - boolean of whether to save the plot
     name            - optional name for the saved plot
     log_R           - boolean of whether to use a logarithmic scale for resistances
+    include_GD_comparison - boolean of whether to include recorded cosine similarity, when calculation is enabled
 
     outputs:
     1 matplotlib plot
@@ -84,11 +86,12 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
     else:
         legend2 += [rf'$x_{{{i+1}}}\,\mathrm{{update}}$' for i in range(Nin)]
 
-    ax4: Optional[plt.Axes] = None
-    if include_network:
-        fig, (ax1, ax2, ax3, ax4) = plt.subplots(1, 4, figsize=(17, 3))
-    else:
-        fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(12.75, 3))
+    show_GD_comparison = (include_GD_comparison and BigClass.Sprvsr.calculate_cosine_sim
+                          and BigClass.Sprvsr.cosine_t.size > 0 and np.any(np.isfinite(BigClass.Sprvsr.cosine_similarity_in_t)))
+    n_axes = 3 + int(bool(include_network)) + int(show_GD_comparison)
+    fig, axes = plt.subplots(1, n_axes, figsize=(4.25 * n_axes, 3))
+    ax1, ax2, ax3 = axes[:3]
+    ax4: Optional[plt.Axes] = axes[3] if include_network else None
 
     # Loss
     for update_t in range(t):
@@ -143,6 +146,13 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
         else:
             print('no NET assigned in input')
 
+    if show_GD_comparison:
+        ax_GD = axes[-1]
+        valid = np.isfinite(BigClass.Sprvsr.cosine_similarity_in_t)
+        ax_GD.plot(BigClass.Sprvsr.cosine_t[valid], BigClass.Sprvsr.cosine_similarity_in_t[valid], 'o-')
+        ax_GD.axhline(0, color='k', linewidth=1.2)
+        ax_GD.set(xlabel='t', title='cosine similarity', ylim=(-1.05, 1.05))
+
     if save:
         if name is not None:
             fig_name = f"{name}.png"
@@ -160,14 +170,14 @@ def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
                      show: bool = True) -> None:
     """
     Plots the structure (nodes and edges) of networkx NET
-    Arrows represent flow direction, arrow width = flow magnitude, color = R (low-cyan, high-purple)
+    Arrows represent flow direction, arrow width = flow magnitude, color = relative R (minimum to maximum spans the colormap).
 
     input:
     NET         - networkx net of nodes and edges
     BigClass    - Class instance containing User_Variables, Network_Structure, etc.
     pos_lattice - dict of positions of nodes from NET.nodes
     node_labels - boolean, show node number in plot or not
-    R_reordered - array of values used to determine edge colors
+    R_reordered - resistances scaled to [0, 1] within this network for edge colors; equal values use the midpoint
     u_reordered - array of values used to determine edge widths and flow direction
     p_reordered - array of values used to determine node colors
     ax          - optional axes on which to draw the network
@@ -179,7 +189,8 @@ def plotNetStructure(NET: nx.DiGraph, BigClass: "Big_Class",
     colors_lst, red, cmap = colors.color_scheme()
     # Determine edge colors from resistances
     if R_reordered.size > 0:
-        R_reordered_normalized = 4 * R_reordered / np.max(R_reordered)  # resistances
+        R_min, R_max = np.min(R_reordered), np.max(R_reordered)
+        R_reordered_normalized = (R_reordered - R_min) / (R_max - R_min) if R_max > R_min else np.full_like(R_reordered, 0.5, dtype=float)
         edge_colors = [cmap(value) for value in R_reordered_normalized]
     else:
         edge_colors = [colors_lst[0] for _ in range(len(NET.edges))]
