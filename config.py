@@ -73,7 +73,7 @@ class VariablesConfig:
     # noise_to_B: float = 20.0  # [K]
     noise_to_B: float = 0.0  # [K]
     noise_to_R_25: float = 0.0  # [Ohm]
-    dt_upper: float = 0.2  # [s] waiting time at the beginning of training
+    dt_upper: float = 0.06  # [s] waiting time at the beginning of training
     dt_lower: float = 0.02  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
@@ -155,7 +155,7 @@ class SupervisorConfig:
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         # initial_T = 1.00 * VariablesConfig.T_room + 0
-        initial_T = 1.15 * VariablesConfig.T_room + 0
+        initial_T = 1.04 * VariablesConfig.T_room + 0
     elif training_scheme == "BEASTAL":
         if control == "current":
             alpha: float = 15.0  # deltaR_propto_deltap

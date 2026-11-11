@@ -150,7 +150,7 @@ class Supervisor:
 
         if Variabs.R_update in {"deltaR_NTC", "grad_desc"} and self.control == "current":  # keep direct GD and NTC on the same task
             mean_R_25 = float(np.mean(Variabs.R_25))
-            print(f'multiplied M by {mean_R_25} for the NTC-matched current-controlled task')
+            # print(f'multiplied M by {mean_R_25} for the NTC-matched current-controlled task')
             M_values = M_values * mean_R_25 / (Strctr.Nout * Strctr.Nin + 1)
             # M_values = M_values * Variabs.R_25
         if np.size(M_values) != required_size:
