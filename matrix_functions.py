@@ -628,11 +628,12 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
     project convention ``loss = desired-output``, the default return value is the gradient of
     ``0.5 * ||desired-output||**2`` with respect to resistance. Pass ``parameter='conductance'`` to obtain the
     conductance gradient instead. The factor of two for an unhalved squared loss can be absorbed into the learning
-    rate. The Laplacian is evaluated at the unit-resistance reference state because resistances are not supplied.
+    rate. Omitting conductances uses a unit-resistance reference. Supply fixed reference conductances for BEASTAL
+    or instantaneous conductances when the evolving resistances are known.
     """
-    if conductances is None:  # This is how they should be
+    if conductances is None:  # unit-resistance fallback
         conductances = np.ones(NE, dtype=float)
-    else:  # Cheating by passing conductances
+    else:  # supplied fixed reference or instantaneous conductances
         # conductances = conductances / np.mean(conductances)
         pass
     node_pressures = np.asarray(p, dtype=float).reshape(-1)[:DM.shape[1]]
@@ -656,6 +657,13 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
     if parameter == "R":
         return -(conductances**2) * grad_conductance
     raise ValueError(f"Unknown gradient parameter: {parameter}")
+
+
+def current_injection(DM: NDArray[np.int_], conductances: NDArray[np.float_]) -> Tuple[NDArray[np.float_], NDArray[np.float_]]:
+    laplacian_dagger = np.linalg.pinv(DM.T @ (conductances[:, None] * DM))
+    CM: NDArray[np.float_] = conductances[:, None] * DM @ laplacian_dagger
+    CM_dagger: NDArray[np.float_] = np.linalg.pinv(CM)
+    return CM, CM_dagger
 
 
 def ChangeRFromFlow(BigClass: "Big_Class", R_max, R_min, R_change_scheme='beads_pressure',

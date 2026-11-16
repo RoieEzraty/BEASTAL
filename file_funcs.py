@@ -2,10 +2,12 @@ from __future__ import annotations
 import csv
 import json
 import numpy as np
+import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.image as mpimg
+import pandas as pd
 
 import copy
 from os import PathLike
@@ -25,6 +27,12 @@ import statistical_analysis as statistics
 if TYPE_CHECKING:
     from Big_Class import Big_Class
     from Color_Scheme import Color_Scheme
+
+
+def read_importants_csv(file_path: str | PathLike[str]) -> pd.DataFrame:
+    """Read exported histories, decoding JSON arrays and retaining numeric t and MSE."""
+    array_columns = ("input", "measured_output", "node_values", "loss", "update_values", "grad_loss_over_batch", "Rs")
+    return pd.read_csv(file_path, converters={column: json.loads for column in array_columns})
 
 
 def export_importants_csv(BigClass: "Big_Class", file_path: str | PathLike[str]) -> None:

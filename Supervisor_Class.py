@@ -776,7 +776,8 @@ class Supervisor:
             if self.cheat_know_R_in_grad_loss:  # CHEATING - you don't really know R/K for grad
                 Strctr.build_current_injection(State.R_in_t[-1])
             else:  # WHAT IT ACTUALLY SHOULD BE
-                Strctr.build_current_injection()  # BEASTAL
+                # Strctr.build_current_injection(BigClass.Variabs.R_25*np.ones(Strctr.NE))  # BEASTAL, only calculated once before loop
+                pass
             p = State.p[:Strctr.NN]
             loss_for_gradient = np.asarray(self.loss, dtype=float).copy()
             if self.training_scheme == 'PIECETAL_NTC':
@@ -789,7 +790,7 @@ class Supervisor:
                                                                    parameter=BigClass.Variabs.grad_desc_use)
             else:  # WHAT IT SHOULD ACTUALLY BE
                 grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
-                                                                   loss_for_gradient, parameter=BigClass.Variabs.grad_desc_use)
+                                                                   loss_for_gradient, conductances=1/(BigClass.Variabs.R_25*np.ones(Strctr.NE)), parameter=BigClass.Variabs.grad_desc_use)
         if Strctr.frozen_ground:
             grad_loss_vec[Strctr.ground_edges] = 0
         self.grad_loss_vec = grad_loss_vec

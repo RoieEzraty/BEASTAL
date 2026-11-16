@@ -123,7 +123,7 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
-    batch_size: int = 3
+    batch_size: int = 1
     iterations: int = 600  # training steps
 
     # CHEATINGS
@@ -182,6 +182,7 @@ class SupervisorConfig:
     anneal_alpha: bool = True
     # anneal_alpha: bool = False
     anneal_dt: bool = False
+    # anneal_dt: bool = True
     # anneal_stay_sample: bool = True
     anneal_stay_sample: bool = False
     # T_annealing: float = 1.0
