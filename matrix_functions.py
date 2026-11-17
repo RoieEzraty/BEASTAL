@@ -663,6 +663,7 @@ def current_injection(DM: NDArray[np.int_], conductances: NDArray[np.float_]) ->
     laplacian_dagger = np.linalg.pinv(DM.T @ (conductances[:, None] * DM))
     CM: NDArray[np.float_] = conductances[:, None] * DM @ laplacian_dagger
     CM_dagger: NDArray[np.float_] = np.linalg.pinv(CM)
+    CM_dagger[np.abs(CM_dagger) < 1e-9] = 0
     return CM, CM_dagger
 
 

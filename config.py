@@ -107,8 +107,8 @@ class SupervisorConfig:
     control: str = "current"  # "pressure" or "current" controlled
     # control: str = "pressure"  # "pressure" or "current" controlled
     task_type: str = "Regression"
-    # dataset_type: str = "alternating ones"
-    dataset_type: str = "random uniform"
+    dataset_type: str = "alternating ones"
+    # dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
             training_scheme: str = "BEASTAL_NTC"
@@ -123,8 +123,8 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
-    batch_size: int = 1
-    iterations: int = 600  # training steps
+    batch_size: int = 3
+    iterations: int = 1200  # training steps
 
     # CHEATINGS
     cheat_know_R_in_evolution: bool = False  # FALSE for BEASTAL, TRUE for grad_desc
@@ -144,13 +144,15 @@ class SupervisorConfig:
                 if GRAD_DESC_USE == "R":
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
+                    # alpha = 2.0 / 1000
                     alpha = 2.0 / 1000
             else:
                 # alpha = 0.02 # deltaR_NTC
                 if GRAD_DESC_USE == "R":
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
-                    alpha = 2.0 / 1000
+                    # alpha = 2.0 / 1000
+                    alpha = 0.2 / 1000
                     # alpha = 0.02  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
@@ -203,7 +205,7 @@ class SupervisorConfig:
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 46
+    random_state_M: int = 48
     random_state: int = 53
 
 # -----------------------------

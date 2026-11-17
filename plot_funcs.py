@@ -41,8 +41,7 @@ plt.rcParams['legend.loc'] = 'best'
 
 # # The functions
 
-def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_network: Optional[bool] = False,
-                    node_labels: bool = False, save: bool = False, name: Optional[str] = None,
+def plot_importants(BigClass: "Big_Class", include_network: Optional[bool] = False, node_labels: bool = False, save: bool = False, name: Optional[str] = None,
                     log_R: bool = False, include_GD_comparison: bool = False) -> None:
     """
     one plot with up to 5 subfigures of
@@ -98,27 +97,28 @@ def plot_importants(BigClass: "Big_Class", movmean_loss: bool = False, include_n
         if update_t % len(BigClass.Sprvsr.dataset) == 0 and update_t != 0 and BigClass.Sprvsr.task_type != 'Regression':
             ax1.axvline(x=update_t, color='red', linestyle='--', linewidth=1)
     loss_over_batch = BigClass.Sprvsr.loss_scalar_in_t_over_batch[:t]
-    if movmean_loss:
-        movmean_loss_t = statistics.mov_ave(loss_over_batch, 16)
-        ax1.plot(np.arange(15, 15+len(movmean_loss_t)), np.abs(movmean_loss_t))
-    else:
-        ax1.plot(loss_over_batch)
-    # ax1.plot(np.mean(np.mean(np.abs(BigClass.Sprvsr.loss_in_t[1:]), axis=1), axis=1))
+    ax1.plot(loss_over_batch, color=colors_lst[0], alpha=0.5)
+    movmean_loss_t = statistics.mov_ave(loss_over_batch, 16)
+    ax1.plot(np.arange(15, 15+len(movmean_loss_t)), np.abs(movmean_loss_t), color=colors_lst[0])
     ax1.set_yscale('log')
     ax1.set_ylim(5e-4, 50)
     ax1.set_title(r'$\|\mathcal{L}\|$')
     ax1.set_xlabel('t')
 
     # Update modality
-    ax2.plot(BigClass.Sprvsr.output_update_in_t[1:])
-    ax2.plot(BigClass.Sprvsr.input_update_in_t[1:])
+    update_lines = ax2.plot(BigClass.Sprvsr.output_update_in_t[1:], alpha=0.5)
+    update_lines += ax2.plot(BigClass.Sprvsr.input_update_in_t[1:], alpha=0.5)
     if BigClass.Sprvsr.access_interNodes:
         ax2.plot(BigClass.Sprvsr.inter_update_in_t[1:])
+    for line in update_lines:
+        if len(line.get_ydata()) >= 16:
+            movmean_update = statistics.mov_ave(line.get_ydata(), 16)
+            ax2.plot(np.arange(15, 15+len(movmean_update)), movmean_update, color=line.get_color())
     update_quantity = 'current' if BigClass.Sprvsr.control == "current" else 'pressure'
     ax2.set_title(f'"Update" modality {update_quantity}')
     ax2.set_xlabel('t')
     if legend2 and len(legend2) < 6:
-        ax2.legend(legend2)
+        ax2.legend(update_lines, legend2)
 
     # Resistances
     ax3.plot(BigClass.State.R_in_t[1:])
