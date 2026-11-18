@@ -667,6 +667,29 @@ def current_injection(DM: NDArray[np.int_], conductances: NDArray[np.float_]) ->
     return CM, CM_dagger
 
 
+def inverse_laplacian(DM: NDArray[np.int_], conductances: NDArray[np.float_],
+                      ground_nodes: NDArray[np.int_] | None = None) -> NDArray[np.float_]:
+    """Return the Laplacian pseudoinverse, or its grounded inverse embedded in node coordinates when grounds are supplied.
+
+    The pseudoinverse uses a zero-mean voltage gauge. Supply ground_nodes for the physical current-to-voltage map with
+    those node voltages fixed at zero; rows and columns at grounded nodes then vanish.
+    """
+    conductances = np.asarray(conductances, dtype=float).reshape(-1)
+    laplacian = DM.T @ (conductances[:, None] * DM)
+    if ground_nodes is None:
+        return np.linalg.pinv(laplacian)
+    grounds = np.asarray(ground_nodes, dtype=int).reshape(-1)
+    free_nodes = np.setdiff1d(np.arange(DM.shape[1]), grounds)
+    inverse_L = np.zeros_like(laplacian)
+    inverse_L[np.ix_(free_nodes, free_nodes)] = np.linalg.solve(laplacian[np.ix_(free_nodes, free_nodes)], np.eye(free_nodes.size))
+    return inverse_L
+
+
+def M_from_inverse_L(inverse_L: NDArray[np.float_], input_nodes: NDArray[np.int_], output_nodes: NDArray[np.int_]) -> NDArray[np.float_]:
+    """Extract the current-input to voltage-output task matrix from a grounded inverse Laplacian."""
+    return inverse_L[np.ix_(output_nodes, input_nodes)].copy()
+
+
 def ChangeRFromFlow(BigClass: "Big_Class", R_max, R_min, R_change_scheme='beads_pressure',
                     allowed_cells=[], beta=0.0):
     """

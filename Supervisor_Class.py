@@ -27,8 +27,7 @@ if TYPE_CHECKING:
 class Supervisor:
     """Own the task, training data, losses, and update-modality values."""
 
-    def __init__(self, config: ExperimentConfig, Strctr: "Network_Structure",
-                 Variabs: "User_Variables") -> None:
+    def __init__(self, config: ExperimentConfig, Strctr: "Network_Structure", Variabs: "User_Variables") -> None:
         Sprvsr = config.Sprvsr
         self.control = Sprvsr.control
         self.iterations: int = Sprvsr.iterations
@@ -40,6 +39,7 @@ class Supervisor:
         self.batch_size: int = int(batch_size)
         self.task_type: str = Sprvsr.task_type
         self.dataset_type: str = Sprvsr.dataset_type
+        self.M_type: str = Sprvsr.M_type
         self.training_scheme: str = Sprvsr.training_scheme
         self.use_p_tag: bool = Sprvsr.use_p_tag
         self.normalize_loss: bool = Sprvsr.normalize_loss
@@ -88,6 +88,12 @@ class Supervisor:
         self.y_test: NDArray[np.float_]
         self.means: NDArray[np.float_]
 
+        if self.control == "current" and self.cap_Q and Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
+            R_at_T_max = Variabs.R_25 * np.exp(Variabs.B * (1/self.T_max - 1/Variabs.T_room))
+            Q_sqrd_max = Variabs.G_T * (self.T_max - Variabs.T_room) / R_at_T_max
+            self.Q_max_per_edge: NDArray[np.float_] = np.asarray(np.sqrt(Q_sqrd_max), dtype=float)
+            self.Q_max: float = float(np.min(self.Q_max_per_edge))
+
         self.assign_alpha(Sprvsr.alpha, Variabs)
         self.assign_M(config, Strctr, Variabs)
         self.create_dataset_and_targets(config, Strctr, Variabs)
@@ -133,14 +139,43 @@ class Supervisor:
         self.alpha_in_t: NDArray[np.float_] = self.alpha_initial * np.ones(self.iterations)
 
     def assign_M(self, config: ExperimentConfig, Strctr: "Network_Structure", 
-                 Variabs: Optional["User_Variables"] = None) -> None:
-        """Build and optionally normalize the regression task matrix."""
+                 Variabs: "User_Variables") -> None:
+        """Build a configured/random task, or an unscaled task realized by a teacher on the same topology."""
         required_size = Strctr.Nin * Strctr.Nout
         configured_values = config.Sprvsr.M_values
+        self.teacher_R: Optional[NDArray[np.float_]] = None
         if configured_values is None:
-            M_values = functions.random_gen_M(config.Sprvsr.random_state_M, required_size)
-        else:
-            M_values = configured_values.copy()
+            if self.M_type == "teacher_net":  # teacher net
+                if Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
+                    R_min = Variabs.R_25 * np.exp(Variabs.B * (1/self.T_max - 1/Variabs.T_room))
+                    R_max = Variabs.R_25
+                else:
+                    R_min, R_max = Variabs.R_min, Variabs.R_max
+                self.teacher_R = self.teacher_net_R(config.Sprvsr.random_state_M, Strctr.NE, R_max, R_min)
+                if Strctr.frozen_ground:
+                    if Variabs.R_update == "deltaR_NTC":
+                        initial_R = Variabs.R_25 * np.exp(Variabs.B * (1/self.initial_T - 1/Variabs.T_room))
+                    else:
+                        initial_R = np.asarray(config.State.R_vec_i, dtype=float).reshape(-1)
+                        if initial_R.size != Strctr.NE:
+                            initial_R = np.ones(Strctr.NE, dtype=float)
+                    self.teacher_R[Strctr.ground_edges] = initial_R[Strctr.ground_edges]
+                grounds = Strctr.ground_nodes_arr
+                if self.control == "current":
+                    if not grounds.size:  # match solve_flow's implicit return terminal
+                        grounds = np.array([Strctr.output_nodes_arr[-1]], dtype=int)
+                    inverse_L = matrix_functions.inverse_laplacian(Strctr.DM, 1/self.teacher_R, grounds)
+                    self.M = matrix_functions.M_from_inverse_L(inverse_L, Strctr.input_nodes_arr, Strctr.output_nodes_arr)
+                else:
+                    fixed_nodes = np.concatenate((grounds, Strctr.input_nodes_arr, Strctr.extraInput_nodes_arr))
+                    inverse_L = matrix_functions.inverse_laplacian(Strctr.DM, 1/self.teacher_R, fixed_nodes)
+                    laplacian = Strctr.DM.T @ ((1/self.teacher_R)[:, None] * Strctr.DM)
+                    self.M = (-inverse_L @ laplacian[:, Strctr.input_nodes_arr])[Strctr.output_nodes_arr]
+                return  # normalization or NTC task scaling would change the teacher's physical map
+            elif self.M_type == "random":  # random
+                M_values = functions.random_gen_M(config.Sprvsr.random_state_M, required_size)
+        else:  # specified vals
+            M_values = np.asarray(configured_values, dtype=float).reshape(-1).copy()
             if np.size(M_values) < required_size:
                 M_values = functions.random_gen_M(config.Sprvsr.random_state_M, required_size)
             else:
@@ -154,8 +189,7 @@ class Supervisor:
             M_values = M_values * mean_R_25 / (Strctr.Nout * Strctr.Nin + 1)
             # M_values = M_values * Variabs.R_25
         if np.size(M_values) != required_size:
-            raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} "
-                             f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}.")
+            raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} " f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}.")
         self.M: NDArray[np.float_] = M_values.reshape(Strctr.Nout, Strctr.Nin)
 
     def create_dataset_and_targets(self, config: ExperimentConfig, Strctr: "Network_Structure",
@@ -714,11 +748,7 @@ class Supervisor:
             update_vec = self.update_vec_in_t[0]
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
-        if self.control == "current" and self.cap_Q:
-            R_at_T_max = State.R_from_T(BigClass, self.T_max)
-            Q_sqrd_max = BigClass.Variabs.G_T * (self.T_max - BigClass.Variabs.T_room) / R_at_T_max
-            self.Q_max_per_edge: NDArray[np.float_] = np.asarray(np.sqrt(Q_sqrd_max), dtype=float)
-            self.Q_max: float = float(np.min(self.Q_max_per_edge))
+        if self.control == "current" and self.cap_Q and BigClass.Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
             if self.training_scheme == 'grad_desc':
                 pass
             else:
@@ -808,3 +838,9 @@ class Supervisor:
         if output_residual.size != Strctr.Nout:
             raise ValueError(f"Adjoint output residual has {output_residual.size} entries; expected {Strctr.Nout}")
         self.adjoint_output = self.alpha * output_residual
+
+    def teacher_net_R(self, random_state: int, size: int, R_max: float | NDArray[np.float_], R_min: float | NDArray[np.float_]) -> NDArray[np.float_]:
+        """Sample reproducible teacher resistances uniformly within scalar or per-edge bounds, without changing the global RNG."""
+        lower = np.broadcast_to(np.asarray(R_min, dtype=float), (size,))
+        upper = np.broadcast_to(np.asarray(R_max, dtype=float), (size,))
+        return np.random.default_rng(random_state).uniform(lower, upper)

@@ -73,8 +73,8 @@ class VariablesConfig:
     # noise_to_B: float = 20.0  # [K]
     noise_to_B: float = 0.0  # [K]
     noise_to_R_25: float = 0.0  # [Ohm]
-    dt_upper: float = 0.06  # [s] waiting time at the beginning of training
-    dt_lower: float = 0.02  # [s] waiting time at the end of training
+    dt_upper: float = 0.01  # [s] waiting time at the beginning of training
+    dt_lower: float = 0.01  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
     euler_steps: int = 40  # steps during euler ODE solver.
@@ -124,7 +124,7 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 3
-    iterations: int = 1200  # training steps
+    iterations: int = 3800  # training steps
 
     # CHEATINGS
     cheat_know_R_in_evolution: bool = False  # FALSE for BEASTAL, TRUE for grad_desc
@@ -152,7 +152,7 @@ class SupervisorConfig:
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
                     # alpha = 2.0 / 1000
-                    alpha = 0.2 / 1000
+                    alpha = 0.02 / 1000
                     # alpha = 0.02  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
@@ -198,14 +198,14 @@ class SupervisorConfig:
     calculate_every: int = int(iterations/80)
     plot_every: int = calculate_every
 
-    # M_values: NDArray[np.float_] = field(
-    #     default_factory=lambda: np.array([2 / 4, 1 / 4, 0.1, 0.35, 0.75, 0.04])
-    # )
+    # M_values: NDArray[np.float_] = field(default_factory=lambda: np.array([2 / 4, 1 / 4, 0.1, 0.35, 0.75, 0.04]))
+    # M_type: str = "random"  # "random" or "teacher_net"; explicit M_values override this choice
+    M_type: str = "teacher_net"  # "random" or "teacher_net"; explicit M_values override this choice
     M_values: NDArray[np.float_] | None = None
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 48
+    random_state_M: int = 49
     random_state: int = 53
 
 # -----------------------------
