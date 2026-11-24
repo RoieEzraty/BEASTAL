@@ -42,14 +42,15 @@ plt.rcParams['legend.loc'] = 'best'
 # # The functions
 
 def plot_importants(BigClass: "Big_Class", include_network: Optional[bool] = False, node_labels: bool = False, save: bool = False, name: Optional[str] = None,
-                    log_R: bool = False, include_GD_comparison: bool = False) -> None:
+                    log_R: bool = False, include_GD_comparison: bool = False, include_Q_comparison: bool = False) -> None:
     """
-    one plot with up to 5 subfigures of
+    one plot with up to 6 subfigures of
     1) mean absolute value of loss in time
     2) controlled inputs and outputs in the update modality, in time
     3) resistances in time
     4) Network structure, from networkx pos_lattice (optional)
     5) Cosine similarity between applied and GD resistance steps (optional, when calculated)
+    6) Cosine similarities of desired and actual Q and Q squared over all edges, before resistance evolution (optional)
 
     inputs:
     BigClass        - Class instance containing User_Variables, Network_Structure, etc.
@@ -60,6 +61,7 @@ def plot_importants(BigClass: "Big_Class", include_network: Optional[bool] = Fal
     name            - optional name for the saved plot
     log_R           - boolean of whether to use a logarithmic scale for resistances
     include_GD_comparison - boolean of whether to include recorded cosine similarity, when calculation is enabled
+    include_Q_comparison - boolean of whether to include recorded desired-versus-actual current cosine similarities
 
     outputs:
     1 matplotlib plot
@@ -87,7 +89,7 @@ def plot_importants(BigClass: "Big_Class", include_network: Optional[bool] = Fal
 
     show_GD_comparison = (include_GD_comparison and BigClass.Sprvsr.calculate_cosine_sim
                           and BigClass.Sprvsr.cosine_t.size > 0 and np.any(np.isfinite(BigClass.Sprvsr.cosine_similarity_in_t)))
-    n_axes = 3 + int(bool(include_network)) + int(show_GD_comparison)
+    n_axes = 3 + int(bool(include_network)) + int(show_GD_comparison) + int(include_Q_comparison)
     fig, axes = plt.subplots(1, n_axes, figsize=(4.25 * n_axes, 3))
     ax1, ax2, ax3 = axes[:3]
     ax4: Optional[plt.Axes] = axes[3] if include_network else None
@@ -147,11 +149,20 @@ def plot_importants(BigClass: "Big_Class", include_network: Optional[bool] = Fal
             print('no NET assigned in input')
 
     if show_GD_comparison:
-        ax_GD = axes[-1]
+        ax_GD = axes[3 + int(bool(include_network))]
         valid = np.isfinite(BigClass.Sprvsr.cosine_similarity_in_t)
         ax_GD.plot(BigClass.Sprvsr.cosine_t[valid], BigClass.Sprvsr.cosine_similarity_in_t[valid], 'o-')
         ax_GD.axhline(0, color='k', linewidth=1.2)
         ax_GD.set(xlabel='t', title='cosine similarity', ylim=(-1.05, 1.05))
+
+    if include_Q_comparison:
+        ax_Q = axes[-1]
+        update_t = np.arange(1, len(BigClass.State.cosine_des_actual_Q) + 1)
+        ax_Q.plot(update_t, BigClass.State.cosine_des_actual_Q, color=colors_lst[0], label=r'$Q$')
+        ax_Q.plot(update_t, BigClass.State.cosine_des_actual_Q_squared, color=colors_lst[2], label=r'$Q^2$')
+        ax_Q.axhline(0, color='k', linewidth=1.2)
+        ax_Q.set(xlabel='t', ylabel='cosine similarity', title='Desired vs actual current', ylim=(-1.05, 1.05))
+        ax_Q.legend()
 
     if save:
         if name is not None:

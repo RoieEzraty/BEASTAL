@@ -2,9 +2,13 @@ from __future__ import annotations
 import numpy as np
 
 from numpy.typing import NDArray
+from typing import TYPE_CHECKING
 
 import matrix_functions
 from config import ExperimentConfig
+
+if TYPE_CHECKING:
+    from User_Variables import NTC
 
 
 # ===================================================
@@ -101,6 +105,15 @@ class Network_Structure:
         output_at_end = np.isin(self.EJ, self.output_nodes_arr)
         self.output_edges: NDArray[np.int_] = np.flatnonzero(output_at_start | output_at_end)
         self.output_edge_directions: NDArray[np.int_] = np.where(output_at_start[self.output_edges], 1, -1).astype(np.int_)
+
+    def assign_NTCs(self, NTC: "NTC", NTC_g: "NTC", noise_to_R_25: float = 0.0, noise_to_B: float = 0.0) -> None:
+        """Assign per-edge NTC parameters, using NTC_g on edges incident to ground and NTC on all other edges."""
+        self.R_25: NDArray[np.float_] = np.full(self.NE, NTC.R_25, dtype=float)
+        self.B: NDArray[np.float_] = np.full(self.NE, NTC.B, dtype=float)
+        self.R_25[self.ground_edges] = NTC_g.R_25
+        self.B[self.ground_edges] = NTC_g.B
+        self.R_25 = np.random.normal(self.R_25, noise_to_R_25)
+        self.B = np.random.normal(self.B, noise_to_B)
 
     def build_inverse_incidence(self) -> None:
         self.DM_dagger: NDArray[np.float_] = matrix_functions.inverse_incidence(self.DM)

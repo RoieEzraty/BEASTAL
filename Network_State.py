@@ -89,9 +89,7 @@ class Network_State:
             self.R_in_t[0] += np.random.normal(loc=0.0, scale=add_noise, size=BigClass.Strctr.NE)
 
         if BigClass.Variabs.R_update == "deltaR_NTC":
-            self.T_in_t = [
-                np.asarray(self.T_from_R(BigClass, self.R_in_t[0]), dtype=float).copy()
-            ]
+            self.T_in_t = [np.asarray(self.T_from_R(BigClass, self.R_in_t[0]), dtype=float).copy()]
         else:
             self.T_in_t = []
 
@@ -745,8 +743,8 @@ class Network_State:
         outputs:
         T: Temperature in Kelvin corresponding to the given resistance
         """
-        R_25 = BigClass.Variabs.R_25  # resistance at 25°C
-        B = BigClass.Variabs.B  # B coefficient
+        R_25 = BigClass.Strctr.R_25  # resistance at 25°C
+        B = BigClass.Strctr.B  # B coefficient
         T_room = BigClass.Variabs.T_room  # room temperature in Kelvin
         T = (1/T_room + 1/B * np.log(R/R_25))**(-1)
         return T
@@ -754,8 +752,8 @@ class Network_State:
     def R_from_T(self, BigClass: "Big_Class", T: Union[float, NDArray[np.float_]]) -> NDArray[np.float_]:
         """Return NTC resistance corresponding to temperature ``T`` in Kelvin."""
         T_values = np.asarray(T, dtype=float)
-        R_25 = BigClass.Variabs.R_25
-        B = BigClass.Variabs.B
+        R_25 = BigClass.Strctr.R_25
+        B = BigClass.Strctr.B
         T_room = BigClass.Variabs.T_room
         return R_25 * np.exp(B * (1/T_values - 1/T_room))
 
@@ -771,7 +769,7 @@ class Network_State:
         outputs:
         dRdT: Rate of change of resistance with respect to temperature
         """
-        return -BigClass.Variabs.B / T**2 * R
+        return -BigClass.Strctr.B / T**2 * R
 
     def dKdT_from_R(self, BigClass: "Big_Class", R: Union[float, NDArray[np.float_]],
                     T: Union[float, NDArray[np.float_]],) -> NDArray[np.float_]:
@@ -786,4 +784,4 @@ class Network_State:
             dRdT: Rate of change of resistance with respect to temperature
             """
             K = 1/R
-            return BigClass.Variabs.B / T**2 * K
+            return BigClass.Strctr.B / T**2 * K

@@ -89,7 +89,7 @@ class Supervisor:
         self.means: NDArray[np.float_]
 
         if self.control == "current" and self.cap_Q and Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
-            R_at_T_max = Variabs.R_25 * np.exp(Variabs.B * (1/self.T_max - 1/Variabs.T_room))
+            R_at_T_max = Strctr.R_25 * np.exp(Strctr.B * (1/self.T_max - 1/Variabs.T_room))
             Q_sqrd_max = Variabs.G_T * (self.T_max - Variabs.T_room) / R_at_T_max
             self.Q_max_per_edge: NDArray[np.float_] = np.asarray(np.sqrt(Q_sqrd_max), dtype=float)
             self.Q_max: float = float(np.min(self.Q_max_per_edge))
@@ -147,14 +147,14 @@ class Supervisor:
         if configured_values is None:
             if self.M_type == "teacher_net":  # teacher net
                 if Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
-                    R_min = Variabs.R_25 * np.exp(Variabs.B * (1/self.T_max - 1/Variabs.T_room))
-                    R_max = Variabs.R_25
+                    R_min = Strctr.R_25 * np.exp(Strctr.B * (1/self.T_max - 1/Variabs.T_room))
+                    R_max = Strctr.R_25
                 else:
                     R_min, R_max = Variabs.R_min, Variabs.R_max
                 self.teacher_R = self.teacher_net_R(config.Sprvsr.random_state_M, Strctr.NE, R_max, R_min)
                 if Strctr.frozen_ground:
                     if Variabs.R_update == "deltaR_NTC":
-                        initial_R = Variabs.R_25 * np.exp(Variabs.B * (1/self.initial_T - 1/Variabs.T_room))
+                        initial_R = Strctr.R_25 * np.exp(Strctr.B * (1/self.initial_T - 1/Variabs.T_room))
                     else:
                         initial_R = np.asarray(config.State.R_vec_i, dtype=float).reshape(-1)
                         if initial_R.size != Strctr.NE:
@@ -184,10 +184,10 @@ class Supervisor:
             M_values = functions.normalize_M(M_values, config.Sprvsr.normalize, Strctr.Nin, Strctr.Nout)
 
         if Variabs.R_update in {"deltaR_NTC", "grad_desc"} and self.control == "current":  # keep direct GD and NTC on the same task
-            mean_R_25 = float(np.mean(Variabs.R_25))
+            mean_R_25 = float(np.mean(Strctr.R_25))
             # print(f'multiplied M by {mean_R_25} for the NTC-matched current-controlled task')
             M_values = M_values * mean_R_25 / (Strctr.Nout * Strctr.Nin + 1)
-            # M_values = M_values * Variabs.R_25
+            # M_values = M_values * Strctr.R_25
         if np.size(M_values) != required_size:
             raise ValueError(f"M has {np.size(M_values)} values; expected {required_size} " f"for Nin={Strctr.Nin}, Nout={Strctr.Nout}.")
         self.M: NDArray[np.float_] = M_values.reshape(Strctr.Nout, Strctr.Nin)
@@ -378,7 +378,7 @@ class Supervisor:
         elif self.loss_type == 'MSE':
             # denominator = np.mean(np.square(initial_losses))
             denominator = np.mean(np.mean(np.square(self.desired_in_t), axis=0), axis=0)
-            print('denominator=', denominator)
+            # print('denominator=', denominator)
             self.loss_scalar_in_t = np.mean(np.mean(np.square(self.loss_in_t), axis=1), axis=1)
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
@@ -413,10 +413,10 @@ class Supervisor:
         """Return independently prescribed edge currents that implement the stored resistance-gradient step."""
         if BigClass.Variabs.grad_desc_use == "K":
             K = 1/R
-            Q_sqrd = -self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / BigClass.Variabs.B * self.grad_loss_K + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room) * K
+            Q_sqrd = -self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / BigClass.Strctr.B * self.grad_loss_K + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room) * K
             return np.sqrt(np.maximum(Q_sqrd, 0.0))
         elif BigClass.Variabs.grad_desc_use == "R":
-            Q_sqrd_times_R = self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / (R*BigClass.Variabs.B) * self.grad_loss_R + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
+            Q_sqrd_times_R = self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / (R*BigClass.Strctr.B) * self.grad_loss_R + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
             return np.sqrt(np.maximum(Q_sqrd_times_R / R, 0.0))
         
 
@@ -632,7 +632,7 @@ class Supervisor:
                         for idx in BigClass.Strctr.inter_nodes_arr:
                             update_vec = np.insert(update_vec, idx, 0)
                 else:
-                    update_vec = np.matmul(Strctr.CM_dagger, desired_edge_update)
+                    update_vec = np.matmul(Strctr.CM_dagger, desired_edge_update)  # what it should be
                 self.desired_update_Q = -self.alpha * grad_loss_over_batch
             elif self.training_scheme == 'PIECETAL_NTC':
                 if self.control != 'current':
@@ -736,6 +736,8 @@ class Supervisor:
                     # CM_dagger maps the desired edge-current update to the least-squares node-current command directly.
                     # The grounded node supplies the return current during the physical solve.
                     update_vec = np.matmul(Strctr.CM_dagger, Up)
+                    # CM_dagger = Strctr.DM.T@(Strctr.DM @ Strctr.DM_dagger)
+                    # update_vec = np.matmul(CM_dagger, Up)
         elif self.training_scheme == 'grad_desc':
             if BigClass.Variabs.grad_desc_use == 'K':
                 self.grad_loss_K = self.grad_loss_over_batch
@@ -806,7 +808,7 @@ class Supervisor:
             if self.cheat_know_R_in_grad_loss:  # CHEATING - you don't really know R/K for grad
                 Strctr.build_current_injection(State.R_in_t[-1])
             else:  # WHAT IT ACTUALLY SHOULD BE
-                # Strctr.build_current_injection(BigClass.Variabs.R_25*np.ones(Strctr.NE))  # BEASTAL, only calculated once before loop
+                # Strctr.build_current_injection(Strctr.R_25)  # BEASTAL, only calculated once before loop
                 pass
             p = State.p[:Strctr.NN]
             loss_for_gradient = np.asarray(self.loss, dtype=float).copy()
@@ -820,7 +822,7 @@ class Supervisor:
                                                                    parameter=BigClass.Variabs.grad_desc_use)
             else:  # WHAT IT SHOULD ACTUALLY BE
                 grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
-                                                                   loss_for_gradient, conductances=1/(BigClass.Variabs.R_25*np.ones(Strctr.NE)), parameter=BigClass.Variabs.grad_desc_use)
+                                                                   loss_for_gradient, conductances=1/Strctr.R_25, parameter=BigClass.Variabs.grad_desc_use)
         if Strctr.frozen_ground:
             grad_loss_vec[Strctr.ground_edges] = 0
         self.grad_loss_vec = grad_loss_vec

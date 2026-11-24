@@ -34,8 +34,9 @@ class User_Variables:
         elif self.R_update in {"deltaR_NTC", "grad_desc"}:
             self.C_T: float = Variabs.C_T
             self.G_T: float = Variabs.G_T
-            self.R_25: NDArray[np.float_] = np.random.normal(Variabs.R_25, Variabs.noise_to_R_25, Strctr.NE)
-            self.B: NDArray[np.float_] = np.random.normal(Variabs.B, Variabs.noise_to_B, Strctr.NE)
+            self.NTC: NTC = NTC(Variabs.NTC_type)
+            self.NTC_g: NTC = NTC(Variabs.NTC_g_type)
+            Strctr.assign_NTCs(self.NTC, self.NTC_g, noise_to_R_25=Variabs.noise_to_R_25, noise_to_B=Variabs.noise_to_B)
             self.maximal_current: float = Variabs.maximal_current
             if Variabs.dt_upper < Variabs.dt_lower:
                 raise ValueError("dt_upper must be greater than or equal to dt_lower")
@@ -55,3 +56,13 @@ class User_Variables:
 
         self.p_thresh: float = 0.1
         self.bc_noise: float = 0.0
+
+class NTC:
+    """Store parameters for NTC resistor model."""
+    def __init__(self, type: str) -> None:
+        if type == "104BH102HT1":
+            self.B: float = 4100  # [K]
+            self.R_25: float = 1000.0 # [Ohm] Resistance at 25°C
+        elif type == "103EH101HT1":
+            self.B: float = 3244  # [K]
+            self.R_25: float = 100.0 # [Ohm] Resistance at 25°C

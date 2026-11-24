@@ -58,22 +58,26 @@ class VariablesConfig:
     normalize_step: bool = False
 
     # NTC variables
-    R_parallel: int = 1  # each edge is R_parallel resistors in parallel
-    C_T: float = R_parallel * 35 * 1e-3  # heat capacity [J/K]
-    G_T: float = R_parallel * 3.5 * 1e-3   # thermal conductance [W/K] physical one
+    C_T: float = 35 * 1e-3  # heat capacity [J/K]
+    # G_T: float = 3.5 * 1e-3   # thermal conductance [W/K] physical one
+    G_T: float = 1.0 * 1e-3   # thermal conductance [W/K] physical one
     # G_T: float = 7 * 1e-3   # quick
     # G_T: float = 3.5 * 1e-4   # small
     k_B: float = 1.380649e-23  # Boltzmann constant [J/K] for Johnson-Nyquist thermal noise
     # f_cutoff: float = 300e6  # [Hz] cutoff frequency due to parasitic capacitance, for Johnson-Nyquist thermal noise
     # f_cutoff: float = 0  # [Hz] cutoff frequency due to parasitic capacitance, for Johnson-Nyquist thermal noise
     C: float = 1e-18  # [F] parasitic capacitance, for Johnson-Nyquist thermal noise
-    B: float = 4100  # [K]
-    R_25: float = 1000.0 / R_parallel # [Ohm] Resistance at 25°C
+    # B: float = 4100  # [K]
+    # R_25: float = 1000.0 # [Ohm] Resistance at 25°C
+    NTC_type: str = "104BH102HT1"  # NTC resistor type
+    # NTC_type: str = "103EH101HT1"  # NTC resistor type
+    NTC_g_type: str = "104BH102HT1"  # NTC resistor type for ground resistor
+    # NTC_g_type: str = "103EH101HT1"  # NTC resistor type for ground resistor
     T_room: float = 298.15  # [K]
     # noise_to_B: float = 20.0  # [K]
     noise_to_B: float = 0.0  # [K]
     noise_to_R_25: float = 0.0  # [Ohm]
-    dt_upper: float = 0.01  # [s] waiting time at the beginning of training
+    dt_upper: float = 0.02  # [s] waiting time at the beginning of training
     dt_lower: float = 0.01  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
@@ -124,7 +128,7 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 3
-    iterations: int = 3800  # training steps
+    iterations: int = 1400  # training steps
 
     # CHEATINGS
     cheat_know_R_in_evolution: bool = False  # FALSE for BEASTAL, TRUE for grad_desc
@@ -133,7 +137,7 @@ class SupervisorConfig:
 
     # NTC specific
     cap_Q: bool = True
-    T_max: float = 415.0
+    T_max: float = 373.15  # 100C
     
     if R_UPDATE in ["deltaR_NTC", "grad_desc"]:
         if control == "pressure":
@@ -151,8 +155,8 @@ class SupervisorConfig:
                 if GRAD_DESC_USE == "R":
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
-                    # alpha = 2.0 / 1000
-                    alpha = 0.02 / 1000
+                    alpha = 1.0 / 1000
+                    # alpha = 20.0 / 1000
                     # alpha = 0.02  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
@@ -205,7 +209,7 @@ class SupervisorConfig:
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 49
+    random_state_M: int = 44
     random_state: int = 53
 
 # -----------------------------
