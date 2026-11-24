@@ -77,7 +77,7 @@ class VariablesConfig:
     # noise_to_B: float = 20.0  # [K]
     noise_to_B: float = 0.0  # [K]
     noise_to_R_25: float = 0.0  # [Ohm]
-    dt_upper: float = 0.02  # [s] waiting time at the beginning of training
+    dt_upper: float = 0.04  # [s] waiting time at the beginning of training
     dt_lower: float = 0.01  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
@@ -128,7 +128,7 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
     batch_size: int = 3
-    iterations: int = 1400  # training steps
+    iterations: int = 2400  # training steps
 
     # CHEATINGS
     cheat_know_R_in_evolution: bool = False  # FALSE for BEASTAL, TRUE for grad_desc
@@ -191,7 +191,7 @@ class SupervisorConfig:
     # anneal_dt: bool = True
     # anneal_stay_sample: bool = True
     anneal_stay_sample: bool = False
-    # T_annealing: float = 1.0
+    # T_annealing: float = 0.25
     T_annealing: float = 0.75
     include_Power: bool = False
     access_interNodes: bool = False

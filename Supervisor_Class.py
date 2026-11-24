@@ -723,6 +723,7 @@ class Supervisor:
                     Up_sqrd = self.alpha * gradient_sign * gradient + self.beta
 
                 Up = np.sqrt(np.maximum(Up_sqrd, 0))  # Good concoction Sep22
+                # Up = np.maximum(self.alpha * gradient_sign * gradient + self.beta**2, 0)/self.Q_max*2  # No sqrt Nov24
 
                 self.desired_update_Q = Up
                 if self.control == "pressure":
