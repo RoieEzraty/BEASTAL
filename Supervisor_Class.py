@@ -701,8 +701,8 @@ class Supervisor:
                         temperature_excess = np.maximum(T - BigClass.Variabs.T_room, 0.0)
                         self.beta = BigClass.Variabs.G_T * temperature_excess / R
                     else:  # WHAT IT ACTUALLY SHOULD BE
-                        previous_current = np.matmul(Strctr.CM, self.update_vec)  # forestall inertia by Codex Sep11
-                        self.beta =  previous_current**2  # forestall inertia by Codex Sep11
+                        previous_current = np.matmul(Strctr.CM, self.update_vec)  # Approximate previous currents
+                        self.beta =  previous_current**2  # this is the offset inserted into update vals
                 
                 # # zero beta if loss changes sign to let thermal equilibrium dictate resistances
                 # if len(self.loss_in_t)>1:
@@ -752,10 +752,11 @@ class Supervisor:
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
         if self.control == "current" and self.cap_Q and BigClass.Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
-            if self.training_scheme == 'grad_desc':
+            if self.training_scheme == 'grad_desc':  # fitted sources are already capped; retain the full ground return
                 pass
             else:
-                update_vec = np.clip(update_vec, -self.Q_max, self.Q_max)
+                update_vec = np.clip(update_vec, -self.Q_max, self.Q_max)  # clip max current
+                # update_vec = np.clip(update_vec, 0, self.Q_max)  # zero what's below zero
         if self.control == "current":
             # # demean - omit later!
             # update_nodes = np.concatenate((Strctr.input_nodes_arr, Strctr.output_nodes_arr))
@@ -770,7 +771,7 @@ class Supervisor:
             # leave this
             self.update_source_vec = update_vec.copy()
 
-        self.update_vec = update_vec
+        self.update_vec = copy.copy(update_vec)
         update_index = State.t - 1
         if not 0 <= update_index < self.iterations:
             raise IndexError(f"Cannot store update vector for t={State.t}; "

@@ -181,12 +181,12 @@ class SupervisorConfig:
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    normalize_loss = True
-    # normalize_loss = False
+    # normalize_loss = True
+    normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    anneal_alpha: bool = True
-    # anneal_alpha: bool = False
+    # anneal_alpha: bool = True
+    anneal_alpha: bool = False
     anneal_dt: bool = False
     # anneal_dt: bool = True
     # anneal_stay_sample: bool = True
