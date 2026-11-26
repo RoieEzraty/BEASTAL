@@ -71,8 +71,10 @@ class VariablesConfig:
     # R_25: float = 1000.0 # [Ohm] Resistance at 25°C
     NTC_type: str = "104BH102HT1"  # NTC resistor type
     # NTC_type: str = "103EH101HT1"  # NTC resistor type
+    # NTC_type: str = "NTCG103JF103FT1A"  # NTC resistor type
     NTC_g_type: str = "104BH102HT1"  # NTC resistor type for ground resistor
     # NTC_g_type: str = "103EH101HT1"  # NTC resistor type for ground resistor
+    # NTC_g_type: str = "NTCG103JF103FT1A"  # NTC resistor type for ground resistor
     T_room: float = 298.15  # [K]
     # noise_to_B: float = 20.0  # [K]
     noise_to_B: float = 0.0  # [K]
@@ -155,7 +157,7 @@ class SupervisorConfig:
                 if GRAD_DESC_USE == "R":
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
-                    alpha = 1.0 / 1000
+                    alpha = 3.0 / 1000
                     # alpha = 20.0 / 1000
                     # alpha = 0.02  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
@@ -209,7 +211,7 @@ class SupervisorConfig:
     normalize_M: bool = True
     normalize: float = 0.75
     # normalize: float = 1-1/6
-    random_state_M: int = 44
+    random_state_M: int = 43
     random_state: int = 53
 
 # -----------------------------

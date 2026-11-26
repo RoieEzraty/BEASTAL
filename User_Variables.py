@@ -66,3 +66,6 @@ class NTC:
         elif type == "103EH101HT1":
             self.B: float = 3244  # [K]
             self.R_25: float = 100.0 # [Ohm] Resistance at 25°C
+        elif type == "NTCG103JF103FT1A":
+            self.B: float = 3380  # [K]
+            self.R_25: float = 10000.0 # [Ohm] Resistance at 25°C
