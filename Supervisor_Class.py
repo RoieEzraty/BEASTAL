@@ -90,7 +90,7 @@ class Supervisor:
 
         if self.control == "current" and self.cap_Q and Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
             R_at_T_max = Strctr.R_25 * np.exp(Strctr.B * (1/self.T_max - 1/Variabs.T_room))
-            Q_sqrd_max = Variabs.G_T * (self.T_max - Variabs.T_room) / R_at_T_max
+            Q_sqrd_max = Strctr.G_T * (self.T_max - Variabs.T_room) / R_at_T_max
             self.Q_max_per_edge: NDArray[np.float_] = np.asarray(np.sqrt(Q_sqrd_max), dtype=float)
             self.Q_max: float = float(np.min(self.Q_max_per_edge))
 
@@ -413,18 +413,17 @@ class Supervisor:
         """Return independently prescribed edge currents that implement the stored resistance-gradient step."""
         if BigClass.Variabs.grad_desc_use == "K":
             K = 1/R
-            Q_sqrd = -self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / BigClass.Strctr.B * self.grad_loss_K + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room) * K
+            Q_sqrd = -self.alpha * BigClass.Strctr.C_T / BigClass.Variabs.dt * T**2 / BigClass.Strctr.B * self.grad_loss_K + BigClass.Strctr.G_T * (T - BigClass.Variabs.T_room) * K
             return np.sqrt(np.maximum(Q_sqrd, 0.0))
         elif BigClass.Variabs.grad_desc_use == "R":
-            Q_sqrd_times_R = self.alpha * BigClass.Variabs.C_T / BigClass.Variabs.dt * T**2 / (R*BigClass.Strctr.B) * self.grad_loss_R + BigClass.Variabs.G_T * (T - BigClass.Variabs.T_room)
+            Q_sqrd_times_R = self.alpha * BigClass.Strctr.C_T / BigClass.Variabs.dt * T**2 / (R*BigClass.Strctr.B) * self.grad_loss_R + BigClass.Strctr.G_T * (T - BigClass.Variabs.T_room)
             return np.sqrt(np.maximum(Q_sqrd_times_R / R, 0.0))
         
 
     def update_input(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
-                                                                                                 and R_update == 'deltaR_NTC')
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs', 'nudge_outputs'} or (self.training_scheme == 'grad_desc' and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         input_update = self.input_update_in_t[-1]
         input_drawn = self.input_drawn_in_t[-1]
@@ -466,7 +465,7 @@ class Supervisor:
     def update_extraInput(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next extra-input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs', 'nudge_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         extraInput_update = self.extraInput_update_in_t[-1]
@@ -499,7 +498,7 @@ class Supervisor:
         """Calculate and record the next intermediate-node update value."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs', 'nudge_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         inter_update = self.inter_update_in_t[-1]
@@ -531,7 +530,7 @@ class Supervisor:
         """Calculate and record the next output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs', 'nudge_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
@@ -573,7 +572,7 @@ class Supervisor:
         """Calculate and record the next extra-output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs', 'nudge_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         extraOutput_update = copy.copy(self.extraOutput_update_in_t[-1])
@@ -699,7 +698,7 @@ class Supervisor:
                         R = State.R_in_t[-1]
                         T = State.T_in_t[-1]
                         temperature_excess = np.maximum(T - BigClass.Variabs.T_room, 0.0)
-                        self.beta = BigClass.Variabs.G_T * temperature_excess / R
+                        self.beta = BigClass.Strctr.G_T * temperature_excess / R
                     else:  # WHAT IT ACTUALLY SHOULD BE
                         previous_current = np.matmul(Strctr.CM, self.update_vec)  # Approximate previous currents
                         self.beta =  previous_current**2  # this is the offset inserted into update vals
@@ -712,11 +711,11 @@ class Supervisor:
                     if BigClass.Variabs.grad_desc_use == "R":
                         self.grad_loss_R = grad_loss_over_batch.copy()
                         dRdT = State.dRdT_from_R(BigClass, R, T)
-                        Up_sqrd = BigClass.Variabs.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dRdT) / R + self.beta
+                        Up_sqrd = BigClass.Strctr.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dRdT) / R + self.beta
                     else:  # grad_desc_use == "K"
                         self.grad_loss_K = grad_loss_over_batch.copy()
                         dKdT = State.dKdT_from_R(BigClass, R, T)
-                        Up_sqrd = BigClass.Variabs.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dKdT) / R + self.beta
+                        Up_sqrd = BigClass.Strctr.C_T * (-self.alpha * grad_loss_over_batch) / (BigClass.Variabs.dt * dKdT) / R + self.beta
                 else:  # WHAT IT ACTUALY SHOULD BE
                     gradient = grad_loss_over_batch_norm if self.normalize_loss else grad_loss_over_batch
                     gradient_sign = -1 if BigClass.Variabs.grad_desc_use == "K" else 1
@@ -749,13 +748,17 @@ class Supervisor:
             T = BigClass.State.T_in_t[-1]
             self.desired_update_Q = self.calc_grad_desc_NTC_Q(BigClass, R, T)
             update_vec = self.update_vec_in_t[0]
-        elif self.training_scheme == "clamp_outputs":
+        elif self.training_scheme in {"clamp_outputs", "nudge_outputs"}:
             update_vec = np.zeros(BigClass.Strctr.NN, dtype=float)
             update_vec[in_nodes] = np.mean(State.p_in_t[-self.batch_size:], axis=0)[in_nodes]
-            update_vec[out_nodes] = np.mean(self.desired_in_t[-self.batch_size:], axis=0)
+            if self.training_scheme == "clamp_outputs":
+                update_vec[out_nodes] = np.mean(self.desired_in_t[-self.batch_size:], axis=0)
+            else:  # self.training_scheme == "nudge_outputs"
+                update_vec[out_nodes] = (1 - BigClass.Variabs.eta) * np.mean(State.output_in_t[-self.batch_size:], axis=0) + \
+                                        BigClass.Variabs.eta * np.mean(self.desired_in_t[-self.batch_size:], axis=0)
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
-        if self.control == "current" and self.cap_Q and self.training_scheme != 'clamp_outputs' and BigClass.Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
+        if self.control == "current" and self.cap_Q and self.training_scheme not in {'clamp_outputs', 'nudge_outputs'} and BigClass.Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
             if self.training_scheme == 'grad_desc':  # fitted sources are already capped; retain the full ground return
                 pass
             else:

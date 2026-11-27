@@ -228,7 +228,7 @@ class Network_State:
         u - flow at every edge under the specific BC, after convergence while allowing conductivities to change
         """
         control = BigClass.Sprvsr.control if control is None else control
-        if modality == "update" and BigClass.Sprvsr.training_scheme == "clamp_outputs":
+        if modality == "update" and BigClass.Sprvsr.training_scheme in {"clamp_outputs", "nudge_outputs"}:
             control = "pressure"  # Clamp voltages during update, including after current-controlled measurements.
         if control not in {"pressure", "current"}:
             raise ValueError(f"Unknown control type: {control}")
@@ -298,7 +298,7 @@ class Network_State:
             training_scheme = BigClass.Sprvsr.training_scheme
             no_input_schemes = {'Adjoint_current_noIn', 'Adjoint_pressure_noIn'}
             inters = ((BigClass.Sprvsr.access_interNodes or access_inters) and training_scheme not in no_input_schemes
-                      and training_scheme not in {'Adjoint_pressure', 'clamp_outputs'})
+                      and training_scheme not in {'Adjoint_pressure', 'clamp_outputs', 'nudge_outputs'})
 
             if training_scheme in no_input_schemes:
                 latest_update_values = (np.asarray(BigClass.Sprvsr.update_vec, dtype=float),)
@@ -719,9 +719,9 @@ class Network_State:
                 Q_const = BigClass.Sprvsr.calc_grad_desc_NTC_Q(BigClass, R, T)
                 BigClass.Sprvsr.desired_update_Q = Q_const.copy()
             if delta_p_const is not None:  # pressure-controlled Joule heating
-                dTdt = (delta_p_const**2/R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
+                dTdt = (delta_p_const**2/R - BigClass.Strctr.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Strctr.C_T
             else:  # current-controlled Joule heating
-                dTdt = (Q_const**2*R - BigClass.Variabs.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Variabs.C_T
+                dTdt = (Q_const**2*R - BigClass.Strctr.G_T * (T-BigClass.Variabs.T_room)) / BigClass.Strctr.C_T
             T = np.clip(T + euler_dt*dTdt, T_min, numerical_T_max)
             if frozen_ground:
                 T[BigClass.Strctr.ground_edges] = T_initial[BigClass.Strctr.ground_edges]

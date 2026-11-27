@@ -21,6 +21,7 @@ class User_Variables:
         self.gamma: NDArray[np.float_] = np.asarray(Variabs.gamma, dtype=float).copy()
         self.R_update: str = Variabs.R_update
         self.normalize_step: bool = Variabs.normalize_step
+        self.eta: float = Variabs.eta
         self.R_max: float = Variabs.R_max
         self.R_min: float = Variabs.R_min
         self.reset_thresh_b: float = 1e4
@@ -32,8 +33,6 @@ class User_Variables:
         if self.R_update in {"deltaR_propto_dp_decay", "deltaR_propto_dp_nonlin_decay"}:
             self.decay: float = Variabs.decay_R
         elif self.R_update in {"deltaR_NTC", "grad_desc"}:
-            self.C_T: float = Variabs.C_T
-            self.G_T: float = Variabs.G_T
             self.NTC: NTC = NTC(Variabs.NTC_type)
             self.NTC_g: NTC = NTC(Variabs.NTC_g_type)
             Strctr.assign_NTCs(self.NTC, self.NTC_g, noise_to_R_25=Variabs.noise_to_R_25, noise_to_B=Variabs.noise_to_B)
@@ -63,9 +62,20 @@ class NTC:
         if type == "104BH102HT1":
             self.B: float = 4100  # [K]
             self.R_25: float = 1000.0 # [Ohm] Resistance at 25°C
+            self.C_T: float = 35 * 1e-3  # heat capacity [J/K]
+            self.G_T: float = 1.0 * 1e-3   # thermal conductance [W/K]
         elif type == "103EH101HT1":
             self.B: float = 3244  # [K]
             self.R_25: float = 100.0 # [Ohm] Resistance at 25°C
+            self.C_T: float = 35 * 1e-3  # heat capacity [J/K]
+            self.G_T: float = 1.0 * 1e-3   # thermal conductance [W/K]
         elif type == "NTCG103JF103FT1A":
             self.B: float = 3380  # [K]
             self.R_25: float = 10000.0 # [Ohm] Resistance at 25°C
+            self.C_T: float = 35 * 1e-3  # heat capacity [J/K]
+            self.G_T: float = 1.0 * 1e-3   # thermal conductance [W/K]
+        elif type == "B57421V2102H062":
+            self.B: float = 3940  # [K]
+            self.R_25: float = 1000.0  # [Ohm] Resistance at 25°C
+            self.C_T: float = 35 * 1e-3  # heat capacity [J/K]
+            self.G_T: float = 3.5 * 1e-3  # thermal conductance [W/K]

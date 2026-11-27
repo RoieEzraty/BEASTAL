@@ -110,8 +110,12 @@ class Network_Structure:
         """Assign per-edge NTC parameters, using NTC_g on edges incident to ground and NTC on all other edges."""
         self.R_25: NDArray[np.float_] = np.full(self.NE, NTC.R_25, dtype=float)
         self.B: NDArray[np.float_] = np.full(self.NE, NTC.B, dtype=float)
+        self.G_T: NDArray[np.float_] = np.full(self.NE, NTC.G_T, dtype=float)
+        self.C_T: NDArray[np.float_] = np.full(self.NE, NTC.C_T, dtype=float)
         self.R_25[self.ground_edges] = NTC_g.R_25
         self.B[self.ground_edges] = NTC_g.B
+        self.G_T[self.ground_edges] = NTC_g.G_T
+        self.C_T[self.ground_edges] = NTC_g.C_T
         self.R_25 = np.random.normal(self.R_25, noise_to_R_25)
         self.B = np.random.normal(self.B, noise_to_B)
 

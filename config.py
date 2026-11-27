@@ -33,7 +33,7 @@ class StructureConfig:
     net_height: int = 16
     net_length: int = 16
     Nin: int = 2
-    Nout: int = 2
+    Nout: int = 3
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -56,30 +56,29 @@ class VariablesConfig:
     hysteresis: float = 0.0
     decay_R: float = 2e-3
     normalize_step: bool = False
+    eta: float = 0.1  # nudge_outputs: fraction of the measured-to-target output voltage difference
 
     # NTC variables
-    C_T: float = 35 * 1e-3  # heat capacity [J/K]
-    # G_T: float = 3.5 * 1e-3   # thermal conductance [W/K] physical one
-    G_T: float = 1.0 * 1e-3   # thermal conductance [W/K] physical one
-    # G_T: float = 7 * 1e-3   # quick
-    # G_T: float = 3.5 * 1e-4   # small
     k_B: float = 1.380649e-23  # Boltzmann constant [J/K] for Johnson-Nyquist thermal noise
     # f_cutoff: float = 300e6  # [Hz] cutoff frequency due to parasitic capacitance, for Johnson-Nyquist thermal noise
     # f_cutoff: float = 0  # [Hz] cutoff frequency due to parasitic capacitance, for Johnson-Nyquist thermal noise
     C: float = 1e-18  # [F] parasitic capacitance, for Johnson-Nyquist thermal noise
     # B: float = 4100  # [K]
     # R_25: float = 1000.0 # [Ohm] Resistance at 25°C
-    NTC_type: str = "104BH102HT1"  # NTC resistor type
+    # NTC_type: str = "104BH102HT1"  # NTC resistor type
     # NTC_type: str = "103EH101HT1"  # NTC resistor type
     # NTC_type: str = "NTCG103JF103FT1A"  # NTC resistor type
-    NTC_g_type: str = "104BH102HT1"  # NTC resistor type for ground resistor
+    NTC_type: str = "B57421V2102H062"  # NTC resistor type
+    # NTC_g_type: str = "104BH102HT1"  # NTC resistor type for ground resistor
     # NTC_g_type: str = "103EH101HT1"  # NTC resistor type for ground resistor
     # NTC_g_type: str = "NTCG103JF103FT1A"  # NTC resistor type for ground resistor
+    NTC_g_type: str = "B57421V2102H062"  # NTC resistor type for ground resistor
     T_room: float = 298.15  # [K]
     # noise_to_B: float = 20.0  # [K]
     noise_to_B: float = 0.0  # [K]
     noise_to_R_25: float = 0.0  # [Ohm]
-    dt_upper: float = 0.04  # [s] waiting time at the beginning of training
+    # dt_upper: float = 0.04  # [s] waiting time at the beginning of training
+    dt_upper: float = 0.01  # [s] waiting time at the beginning of training
     dt_lower: float = 0.01  # [s] waiting time at the end of training
     # dt_upper: float = 100.0
     # dt_lower: float = 10  # [s] waiting time at the end of training
@@ -121,6 +120,7 @@ class SupervisorConfig:
         elif control == "current":
             training_scheme: str = "BEASTAL_NTC"
             # training_scheme: str = "clamp_outputs"
+            # training_scheme: str = "nudge_outputs"
             # training_scheme: str = "partial_loss_NTC"
             # training_scheme: str = "grad_desc"
             # training_scheme: str = "PIECETAL_NTC"
@@ -131,7 +131,7 @@ class SupervisorConfig:
     # training_scheme: str = "Adjoint_pressure_noIn"
     # training_scheme: str = "Adjoint_current_noIn"
     # training_scheme: str = "Adjoint_pressure"
-    batch_size: int = 3
+    batch_size: int = 1
     iterations: int = 2400  # training steps
 
     # CHEATINGS
@@ -159,13 +159,13 @@ class SupervisorConfig:
                 if GRAD_DESC_USE == "R":
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
-                    alpha = 4.0 / 1000
+                    alpha = 1.0 / 1000
                     # alpha = 20.0 / 1000
                     # alpha = 0.02  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift
         # initial_T = 1.00 * VariablesConfig.T_room + 50
         # initial_T = 1.00 * VariablesConfig.T_room + 0
-        initial_T = 1.04 * VariablesConfig.T_room + 0
+        initial_T = 1.02 * VariablesConfig.T_room + 0
     elif training_scheme == "BEASTAL":
         if control == "current":
             alpha: float = 15.0  # deltaR_propto_deltap
@@ -185,12 +185,12 @@ class SupervisorConfig:
     #     "deltaR_propto_dp_nonlin",
     #     "deltaR_propto_dp_nonlin_decay",
     # }
-    # normalize_loss = True
-    normalize_loss = False
+    normalize_loss = True
+    # normalize_loss = False
     supress_prints: bool = True
     measure_accuracy_every: int = 15
-    # anneal_alpha: bool = True
-    anneal_alpha: bool = False
+    anneal_alpha: bool = True
+    # anneal_alpha: bool = False
     anneal_dt: bool = False
     # anneal_dt: bool = True
     # anneal_stay_sample: bool = True
