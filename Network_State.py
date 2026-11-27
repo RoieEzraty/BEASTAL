@@ -228,6 +228,8 @@ class Network_State:
         u - flow at every edge under the specific BC, after convergence while allowing conductivities to change
         """
         control = BigClass.Sprvsr.control if control is None else control
+        if modality == "update" and BigClass.Sprvsr.training_scheme == "clamp_outputs":
+            control = "pressure"  # Clamp voltages during update, including after current-controlled measurements.
         if control not in {"pressure", "current"}:
             raise ValueError(f"Unknown control type: {control}")
         if modality == "same_BCs":
@@ -296,7 +298,7 @@ class Network_State:
             training_scheme = BigClass.Sprvsr.training_scheme
             no_input_schemes = {'Adjoint_current_noIn', 'Adjoint_pressure_noIn'}
             inters = ((BigClass.Sprvsr.access_interNodes or access_inters) and training_scheme not in no_input_schemes
-                      and training_scheme != 'Adjoint_pressure')
+                      and training_scheme not in {'Adjoint_pressure', 'clamp_outputs'})
 
             if training_scheme in no_input_schemes:
                 latest_update_values = (np.asarray(BigClass.Sprvsr.update_vec, dtype=float),)

@@ -620,22 +620,15 @@ def grad_loss_FC(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_no
 
 
 def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], output_nodes_arr: NDArray[np.int_],
-                      ground_nodes_arr: NDArray[np.int_], loss: NDArray[np.float_], parameter: str = "R",
-                      conductances: Optional[NDArray[np.float_]] = None) -> NDArray[np.float_]:
+                      ground_nodes_arr: NDArray[np.int_], loss: NDArray[np.float_], conductances: NDArray[np.float_],
+                      parameter: str = "R", type: str = "full") -> NDArray[np.float_]:
     """Compute the edge-parameter loss gradient for a current-controlled linear network.
 
-    At fixed node currents and unit resistance, ``dV/dR_e = L^-1 b_e b_e.T V`` on the non-ground nodes. With the
-    project convention ``loss = desired-output``, the default return value is the gradient of
-    ``0.5 * ||desired-output||**2`` with respect to resistance. Pass ``parameter='conductance'`` to obtain the
-    conductance gradient instead. The factor of two for an unhalved squared loss can be absorbed into the learning
-    rate. Omitting conductances uses a unit-resistance reference. Supply fixed reference conductances for BEASTAL
-    or instantaneous conductances when the evolving resistances are known.
+    With the project convention ``loss = desired-output``, ``type='full'`` returns the mean squared loss gradient.
+    ``type='partial'`` instead maps only ``dL/dV`` to edges, omitting network sensitivity and forward voltage drops.
+    Pass ``parameter='K'`` for conductance or ``parameter='R'`` for resistance scaling. Supply fixed reference
+    conductances for BEASTAL or instantaneous conductances when the evolving resistances are known.
     """
-    if conductances is None:  # unit-resistance fallback
-        conductances = np.ones(NE, dtype=float)
-    else:  # supplied fixed reference or instantaneous conductances
-        # conductances = conductances / np.mean(conductances)
-        pass
     node_pressures = np.asarray(p, dtype=float).reshape(-1)[:DM.shape[1]]
     output_nodes = np.asarray(output_nodes_arr, dtype=int).reshape(-1)
     Nout = output_nodes.size
@@ -646,12 +639,15 @@ def grad_loss_current(NE: int, p: NDArray[np.float_], DM: NDArray[np.int_], outp
     free_nodes = np.ones(DM.shape[1], dtype=bool)
     free_nodes[ground_nodes] = False
     DM_free = DM[:, free_nodes]
-    laplacian = DM_free.T @ (conductances[:, None] * DM_free)
     partial_loss = np.zeros(DM.shape[1], dtype=float)
     partial_loss[output_nodes] = output_loss
-    # Mathematically equivalent to np.linalg.inv(laplacian) @ partial_loss[free_nodes].
-    adjoint = np.linalg.solve(laplacian, partial_loss[free_nodes])
-    grad_conductance = 2 * (DM_free @ adjoint) * (DM @ node_pressures) / Nout
+    if type == "full":
+        laplacian = DM_free.T @ (conductances[:, None] * DM_free)
+        # Mathematically equivalent to np.linalg.inv(laplacian) @ partial_loss[free_nodes].
+        adjoint = np.linalg.solve(laplacian, partial_loss[free_nodes])
+        grad_conductance = 2 * (DM_free @ adjoint) * (DM @ node_pressures) / Nout
+    elif type == "partial":
+        grad_conductance = 2 * (DM_free @ partial_loss[free_nodes]) / Nout
     if parameter == "K":
         return grad_conductance
     if parameter == "R":

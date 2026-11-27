@@ -32,8 +32,8 @@ class StructureConfig:
     # net_type: str = "PC"
     net_height: int = 16
     net_length: int = 16
-    Nin: int = 3
-    Nout: int = 3
+    Nin: int = 2
+    Nout: int = 2
     Ninter: int = 0
     in_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
     out_nodes: NDArray[np.int_] = field(default_factory=lambda: np.array([], dtype=np.int_))
@@ -113,13 +113,15 @@ class SupervisorConfig:
     control: str = "current"  # "pressure" or "current" controlled
     # control: str = "pressure"  # "pressure" or "current" controlled
     task_type: str = "Regression"
-    dataset_type: str = "alternating ones"
-    # dataset_type: str = "random uniform"
+    # dataset_type: str = "alternating ones"
+    dataset_type: str = "random uniform"
     if R_UPDATE == "deltaR_NTC":
         if control == "pressure":
             training_scheme: str = "BEASTAL_NTC"
         elif control == "current":
             training_scheme: str = "BEASTAL_NTC"
+            # training_scheme: str = "clamp_outputs"
+            # training_scheme: str = "partial_loss_NTC"
             # training_scheme: str = "grad_desc"
             # training_scheme: str = "PIECETAL_NTC"
     elif R_UPDATE == "grad_desc":
@@ -157,7 +159,7 @@ class SupervisorConfig:
                 if GRAD_DESC_USE == "R":
                     alpha = 1.0 * 1000.0**2
                 else:  # GRAD_DESC_USE == "K"
-                    alpha = 3.0 / 1000
+                    alpha = 4.0 / 1000
                     # alpha = 20.0 / 1000
                     # alpha = 0.02  # deltaR_NTC
         beta = 0  # added inside the update rule for constant shift

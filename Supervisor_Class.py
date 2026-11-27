@@ -423,7 +423,7 @@ class Supervisor:
     def update_input(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         input_update = self.input_update_in_t[-1]
@@ -466,7 +466,7 @@ class Supervisor:
     def update_extraInput(self, BigClass: "Big_Class") -> None:
         """Calculate and record the next extra-input boundary value in update modality."""
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         extraInput_update = self.extraInput_update_in_t[-1]
@@ -499,7 +499,7 @@ class Supervisor:
         """Calculate and record the next intermediate-node update value."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         inter_update = self.inter_update_in_t[-1]
@@ -531,7 +531,7 @@ class Supervisor:
         """Calculate and record the next output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         output_update = copy.copy(self.output_update_in_t[-1])
@@ -573,7 +573,7 @@ class Supervisor:
         """Calculate and record the next extra-output boundary value in update modality."""
         State = BigClass.State
         R_update = BigClass.Variabs.R_update
-        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'} or (self.training_scheme == 'grad_desc' 
+        uses_update_vec = self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC', 'clamp_outputs'} or (self.training_scheme == 'grad_desc'
                                                                                                  and R_update == 'deltaR_NTC')
         loss = self.loss_in_t[-1]
         extraOutput_update = copy.copy(self.extraOutput_update_in_t[-1])
@@ -620,7 +620,7 @@ class Supervisor:
             L_vec = np.zeros(BigClass.Strctr.NN)
             L_vec[out_nodes] = self.loss.ravel()
             update_vec = self.alpha * L_vec
-        elif self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'}:  # same gradient, different update vectors
+        elif self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC'}:  # edge-gradient-based update vectors
             Strctr = BigClass.Strctr_fict if self.control == "pressure" and BigClass.Strctr.Ninter > 0 else BigClass.Strctr
             grad_loss_over_batch = self.grad_loss_over_batch
             grad_loss_over_batch_norm = self.grad_loss_over_batch_norm
@@ -682,7 +682,7 @@ class Supervisor:
                 self.piecetal_local_current_map = local_current_map
                 self.piecetal_current_projection = local_current_projection
                 self.desired_update_Q = Up
-            elif self.training_scheme == 'BEASTAL_NTC':
+            elif self.training_scheme in {'BEASTAL_NTC', 'partial_loss_NTC'}:
                 # if len(self.loss_in_t) >= Strctr.Nin:  # Sep 12 average loss sign goes to ground
                 #     L_bar = np.mean(np.asarray(self.loss_in_t[-Strctr.Nin:], dtype=float), axis=0).ravel()  # Sep 12 average loss sign goes to ground
                 #     for output_idx, output_node in enumerate(Strctr.output_nodes_arr):  # Sep 12 average loss sign goes to ground
@@ -749,9 +749,13 @@ class Supervisor:
             T = BigClass.State.T_in_t[-1]
             self.desired_update_Q = self.calc_grad_desc_NTC_Q(BigClass, R, T)
             update_vec = self.update_vec_in_t[0]
+        elif self.training_scheme == "clamp_outputs":
+            update_vec = np.zeros(BigClass.Strctr.NN, dtype=float)
+            update_vec[in_nodes] = np.mean(State.p_in_t[-self.batch_size:], axis=0)[in_nodes]
+            update_vec[out_nodes] = np.mean(self.desired_in_t[-self.batch_size:], axis=0)
         else:
             raise ValueError(f"Unknown training scheme: {self.training_scheme}")
-        if self.control == "current" and self.cap_Q and BigClass.Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
+        if self.control == "current" and self.cap_Q and self.training_scheme != 'clamp_outputs' and BigClass.Variabs.R_update in {"deltaR_NTC", "grad_desc"}:
             if self.training_scheme == 'grad_desc':  # fitted sources are already capped; retain the full ground return
                 pass
             else:
@@ -783,7 +787,7 @@ class Supervisor:
                 print('thermal contribution beta=', self.beta)
                 print('Up_sqrd=', Up_sqrd)
                 print('desired update Up = ', Up)
-            if self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'PIECETAL_NTC'}:
+            if self.training_scheme in {'BEASTAL', 'BEASTAL_NTC', 'partial_loss_NTC', 'PIECETAL_NTC'}:
                 print('grad of loss over batch=', grad_loss_over_batch)
 
     def calc_grad_loss(self, BigClass: "Big_Class", tb: Optional[int] = None) -> None:
@@ -820,11 +824,13 @@ class Supervisor:
                 loss_for_gradient[..., np.arange(Strctr.Nout) != chosen_output_index] = 0.0
             if self.cheat_know_R_in_grad_loss:  # CHEATING - you don't really know R/K for grad
                 grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
-                                                                   loss_for_gradient, conductances = 1/BigClass.State.R_in_t[-1],
-                                                                   parameter=BigClass.Variabs.grad_desc_use)
+                                                                   loss_for_gradient, 1/BigClass.State.R_in_t[-1],
+                                                                   parameter=BigClass.Variabs.grad_desc_use,
+                                                                   type="partial" if self.training_scheme == 'partial_loss_NTC' else "full")
             else:  # WHAT IT SHOULD ACTUALLY BE
                 grad_loss_vec = matrix_functions.grad_loss_current(Strctr.NE, p, Strctr.DM, out_nodes, Strctr.ground_nodes_arr,
-                                                                   loss_for_gradient, conductances=1/Strctr.R_25, parameter=BigClass.Variabs.grad_desc_use)
+                                                                   loss_for_gradient, 1/Strctr.R_25, parameter=BigClass.Variabs.grad_desc_use,
+                                                                   type="partial" if self.training_scheme == 'partial_loss_NTC' else "full")
         if Strctr.frozen_ground:
             grad_loss_vec[Strctr.ground_edges] = 0
         self.grad_loss_vec = grad_loss_vec
